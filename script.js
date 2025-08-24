@@ -178,7 +178,9 @@ window.BCM = {
 
   fetchCoursesText,
   fetchFaqsText,
-  fetchRecentEnrollmentsText
+  fetchRecentEnrollmentsText,
+
+  // NEW: expose Heygen token fetch
   fetchHeygenToken
 };
 console.log("[BCM] bridge ready", typeof window.BCM);
