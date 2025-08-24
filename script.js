@@ -129,11 +129,29 @@ async function createEnrollment(payload) {
 async function pingHealth() {
   return httpGet("/health");
 }
+
 async function fetchHeygenToken() {
   const headers = {};
   if (ADMIN_KEY) headers["X-Admin-Key"] = ADMIN_KEY;
   return httpPost("/heygen/token", {}, { headers });
 }
+
+// === NEW: Heygen session helpers ===
+async function prepareHeygenSession() {
+  const r = await fetchHeygenToken();
+  if (!r.ok) return r;
+  const { session_token, avatar_id } = r.data || r;
+  window.HeygenSession = { session_token, avatar_id }; // stash for next step
+  return { ok: true, data: window.HeygenSession };
+}
+
+async function startHeygenStreaming() {
+  if (!window.HeygenSession) return { ok:false, error:"No session. Click Token/Prepare first." };
+  // TODO(next): init LiveKit/HeyGen Streaming with session_token + avatar_id
+  console.log("[HeyGen] ready:", window.HeygenSession);
+  return { ok:true };
+}
+
 /** ===== PUBLIC API (READABLE TEXT) ===== **/
 async function fetchCoursesText() {
   const r = await fetchCourses();
@@ -180,7 +198,9 @@ window.BCM = {
   fetchFaqsText,
   fetchRecentEnrollmentsText,
 
-  // NEW: expose Heygen token fetch
-  fetchHeygenToken
+  // NEW: expose Heygen token + session helpers
+  fetchHeygenToken,
+  prepareHeygenSession,
+  startHeygenStreaming
 };
 console.log("[BCM] bridge ready", typeof window.BCM);
