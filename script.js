@@ -179,5 +179,6 @@ window.BCM = {
   fetchCoursesText,
   fetchFaqsText,
   fetchRecentEnrollmentsText
+  fetchHeygenToken
 };
 console.log("[BCM] bridge ready", typeof window.BCM);
