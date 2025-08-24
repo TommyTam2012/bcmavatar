@@ -129,7 +129,11 @@ async function createEnrollment(payload) {
 async function pingHealth() {
   return httpGet("/health");
 }
-
+async function fetchHeygenToken() {
+  const headers = {};
+  if (ADMIN_KEY) headers["X-Admin-Key"] = ADMIN_KEY;
+  return httpPost("/heygen/token", {}, { headers });
+}
 /** ===== PUBLIC API (READABLE TEXT) ===== **/
 async function fetchCoursesText() {
   const r = await fetchCourses();
