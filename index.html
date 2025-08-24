@@ -29,6 +29,8 @@
       <button id="btn-courses">Courses</button>
       <button id="btn-faqs">FAQs</button>
       <button id="btn-token">Token</button>
+      <button id="btn-prepare">Prepare</button>
+      <button id="btn-start">Start</button>
       <button id="btn-enroll">Test Enroll</button>
     </div>
     <textarea id="bcm-out" rows="8" placeholder="Output appears here..."></textarea>
@@ -53,6 +55,18 @@
         if (key) BCM.setAdminKey(key);
         const r = await BCM.fetchHeygenToken();
         out.value = JSON.stringify(r.data || r, null, 2);
+      };
+
+      $('btn-prepare').onclick = async () => {
+        const key = prompt('X-Admin-Key? (needed once)');
+        if (key) BCM.setAdminKey(key);
+        const r = await BCM.prepareHeygenSession();
+        $('bcm-out').value = JSON.stringify(r.data || r, null, 2);
+      };
+
+      $('btn-start').onclick = async () => {
+        const r = await BCM.startHeygenStreaming();
+        $('bcm-out').value = JSON.stringify(r, null, 2);
       };
 
       $('btn-enroll').onclick  = async () => {
