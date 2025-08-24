@@ -144,7 +144,7 @@ function startHeygenTokenAutoRefresh() {
     const r = await fetchHeygenToken();
     if (r.ok && r.data?.session_token) {
       window.HeygenSession.session_token = r.data.session_token;
-      console.log("[HeyGen] token refreshed");
+      console.log("[Heygen] token refreshed");
     }
   }, 240_000); // refresh ~4 min
 }
@@ -164,15 +164,15 @@ async function startHeygenStreaming() {
   const { session_token, avatar_id } = window.HeygenSession;
 
   try {
-    // create HeyGen streaming client
-    const client = new HeyGen.StreamingClient();
+    // create Heygen streaming client
+    const client = new Heygen.StreamingClient();
     await client.connect({ token: session_token, avatarId: avatar_id });
     window.HeygenClient = client;
 
-    console.log("[HeyGen] streaming session started");
+    console.log("[Heygen] streaming session started");
     return { ok:true };
   } catch (err) {
-    console.error("[HeyGen] failed:", err);
+    console.error("[Heygen] failed:", err);
     return { ok:false, error:String(err) };
   }
 }
