@@ -1,17 +1,23 @@
 /* ===========================
-   BCM Avatar Frontend Bridge
+   BCM Avatar Frontend Bridge (ESM)
    - Host: Vercel (static)
    - Backend: FastAPI on Render
    - Exposes window.BCM{...}
+   - Adds HeyGen Streaming (ES module)
    =========================== */
 
-console.log("[BCM] bridge loaded");
+import { StreamingAvatar } from "@heygen/streaming-avatar";
+import { Room } from "livekit-client";
 
-/** ========= CONFIG ========= **/
+console.log("[BCM] main.js loaded (ESM)");
+
+// ========= CONFIG =========
 let API_BASE = "https://bcm-demo.onrender.com";   // change if needed
 let ADMIN_KEY = undefined;                         // set via BCM.setAdminKey()
+let avatar;                                        // HeyGen StreamingAvatar
+let _tokenTimer = null;
 
-/** ========= UTILS ========= **/
+// ========= UTILS =========
 const DEFAULT_TIMEOUT_MS = 12000;
 
 function withTimeout(ms, signal) {
@@ -80,7 +86,7 @@ async function httpPost(path, body, { timeout = DEFAULT_TIMEOUT_MS, headers = {}
   }
 }
 
-/** ====== TEXT HELPERS ====== **/
+// ========= TEXT HELPERS =========
 function coursesToText(data) {
   if (!data || !Array.isArray(data.courses)) return "No courses available at the moment.";
   const lines = data.courses.map(c => c.summary || JSON.stringify(c));
@@ -97,7 +103,7 @@ function enrollmentsToText(data) {
   return data.map(e => `${e.full_name} enrolled in ${e.program_code || "a course"} on ${e.created_at}`).join("\n");
 }
 
-/** ===== PUBLIC API (STRUCTURED) ===== **/
+// ========= PUBLIC API (STRUCTURED) =========
 async function fetchCourses() {
   const res = await httpGet("/courses/summary/all");
   return res.ok ? res : { ok: false, error: "Live system is unreachable. Please try again later." };
@@ -136,15 +142,14 @@ async function fetchHeygenToken() {
   return httpPost("/heygen/token", {}, { headers });
 }
 
-// === NEW: Heygen session helpers ===
-let _tokenTimer = null;
+// === HeyGen session helpers ===
 function startHeygenTokenAutoRefresh() {
   if (_tokenTimer) clearInterval(_tokenTimer);
   _tokenTimer = setInterval(async () => {
     const r = await fetchHeygenToken();
     if (r.ok && r.data?.session_token) {
       window.HeygenSession.session_token = r.data.session_token;
-      console.log("[Heygen] token refreshed");
+      console.log("[HeyGen] token refreshed");
     }
   }, 240_000); // refresh ~4 min
 }
@@ -164,20 +169,22 @@ async function startHeygenStreaming() {
   const { session_token, avatar_id } = window.HeygenSession;
 
   try {
-    // create Heygen streaming client (UMD global: HeygenStreaming)
-    const client = new HeygenStreaming.StreamingClient();
-    await client.connect({ token: session_token, avatarId: avatar_id });
-    window.HeygenClient = client;
+    avatar = new StreamingAvatar({ token: session_token });
 
-    console.log("[Heygen] streaming session started");
+    await avatar.createStartAvatar({
+      avatarName: avatar_id,
+      quality: "high"
+    });
+
+    console.log("[HeyGen] Streaming started with avatar:", avatar_id);
     return { ok:true };
   } catch (err) {
-    console.error("[Heygen] failed:", err);
+    console.error("[HeyGen] failed:", err);
     return { ok:false, error:String(err) };
   }
 }
 
-/** ===== PUBLIC API (READABLE TEXT) ===== **/
+// ========= PUBLIC API (READABLE TEXT) =========
 async function fetchCoursesText() {
   const r = await fetchCourses();
   if (!r.ok) return "Sorry, my live system is unreachable. Please try again later.";
@@ -196,7 +203,7 @@ async function fetchRecentEnrollmentsText(limit = 10, source) {
   return enrollmentsToText(r.data);
 }
 
-/** ===== FALLBACK CHAT/ROUTER ===== **/
+// ========= FALLBACK CHAT/ROUTER =========
 async function askBackend(utterance) {
   const u = String(utterance || "").toLowerCase();
   if (u.includes("course")) return { ok: true, data: await fetchCoursesText() };
@@ -206,7 +213,7 @@ async function askBackend(utterance) {
   return res;
 }
 
-/** ===== EXPOSE TO WINDOW ===== **/
+// ========= EXPOSE TO WINDOW =========
 window.BCM = {
   setApiBase: (url) => { API_BASE = String(url || API_BASE); },
   getApiBase: () => API_BASE,
@@ -223,9 +230,9 @@ window.BCM = {
   fetchFaqsText,
   fetchRecentEnrollmentsText,
 
-  // NEW: expose Heygen token + session helpers
   fetchHeygenToken,
   prepareHeygenSession,
   startHeygenStreaming
 };
-console.log("[BCM] bridge ready", typeof window.BCM);
+
+console.log("[BCM] bridge ready (ESM)", typeof window.BCM);
