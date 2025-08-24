@@ -12,9 +12,6 @@
     #bcm-tester button { padding:6px 10px; border:0; border-radius:10px; background:#1e2b4a; color:#cfe0ff; cursor:pointer; }
     #bcm-tester textarea { width:100%; border-radius:10px; border:1px solid #2a3a5a; background:#0f1730; color:#cfe0ff; padding:8px; }
   </style>
-  <!-- Add external SDKs -->
-  <script src="https://unpkg.com/livekit-client/dist/livekit-client.umd.js"></script>
-  <script src="https://unpkg.com/@heygen/streaming-sdk/dist/index.umd.js"></script>
 </head>
 <body>
 
@@ -35,6 +32,10 @@
     </div>
     <textarea id="bcm-out" rows="8" placeholder="Output appears here..."></textarea>
   </div>
+
+  <!-- Load external SDKs before BCM bridge -->
+  <script src="https://unpkg.com/livekit-client/dist/livekit-client.umd.js"></script>
+  <script src="https://unpkg.com/@heygen/streaming-sdk/dist/index.umd.js"></script>
 
   <!-- Load BCM bridge -->
   <script src="/script.js" defer></script>
