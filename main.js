@@ -1,238 +1,103 @@
-/* ===========================
-   BCM Avatar Frontend Bridge (ESM)
-   - Host: Vercel (static)
-   - Backend: FastAPI on Render
-   - Exposes window.BCM{...}
-   - Adds HeyGen Streaming (ES module)
-   =========================== */
+import StreamingAvatar, {
+  AvatarQuality,
+  StreamingEvents,
+  TaskType,
+} from "@heygen/streaming-avatar";
 
-import { StreamingAvatar } from "@heygen/streaming-avatar";
-import { Room } from "livekit-client";
+// ---- CONFIG ----
+const BACKEND_BASE =
+  import.meta.env.VITE_BACKEND_BASE || "https://bcm-demo.onrender.com";
 
-console.log("[BCM] main.js loaded (ESM)");
+// Set ONE of these (name or id). Replace with your avatar if needed.
+const AVATAR_NAME = "Wayne_20240711"; // change to yours
+const AVATAR_ID = null;               // or e.g. "e30545b4804c4c8fa38487b5be2d6d5c"
 
-// ========= CONFIG =========
-let API_BASE = "https://bcm-demo.onrender.com";   // change if needed
-let ADMIN_KEY = undefined;                         // set via BCM.setAdminKey()
-let avatar;                                        // HeyGen StreamingAvatar
-let _tokenTimer = null;
+// ---- DOM ----
+const videoEl = document.getElementById("avatarVideo");
+const startBtn = document.getElementById("startSession");
+const endBtn = document.getElementById("endSession");
+const speakBtn = document.getElementById("speakButton");
+const inputEl = document.getElementById("userInput");
 
-// ========= UTILS =========
-const DEFAULT_TIMEOUT_MS = 12000;
+// ---- STATE ----
+let avatar = null;
 
-function withTimeout(ms, signal) {
-  const ctrl = new AbortController();
-  const id = setTimeout(() => ctrl.abort(new Error("Timeout")), ms);
-  const combined = signal ? new AbortController() : null;
-
-  if (signal && combined) {
-    const onAbort = () => combined.abort(signal.reason || new Error("Aborted"));
-    signal.addEventListener("abort", onAbort, { once: true });
-  }
-
-  return {
-    signal: combined ? combined.signal : ctrl.signal,
-    clear: () => clearTimeout(id),
-    controller: ctrl
-  };
+// ---- HELPERS ----
+async function fetchAccessToken() {
+  const res = await fetch(`${BACKEND_BASE}/heygen/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+  });
+  const json = await res.json();
+  // support several shapes
+  return json?.data?.token || json?.session_token || json?.token;
 }
 
-async function httpGet(path, { timeout = DEFAULT_TIMEOUT_MS, headers = {} } = {}) {
-  const t = withTimeout(timeout);
-  try {
-    const res = await fetch(`${API_BASE}${path}`, {
-      method: "GET",
-      headers: { Accept: "application/json", ...headers },
-      signal: t.signal
-    });
-    const contentType = res.headers.get("content-type") || "";
-    let data = null;
-    if (contentType.includes("application/json")) {
-      data = await res.json();
-    } else {
-      data = await res.text();
+function attachVideoOnReady(instance) {
+  instance.on(StreamingEvents.STREAM_READY, (ev) => {
+    const stream = ev.detail;
+    if (stream && videoEl) {
+      videoEl.srcObject = stream;
+      videoEl.onloadedmetadata = () => videoEl.play().catch(console.error);
     }
-    if (!res.ok) throw new Error(`GET ${path} -> ${res.status} ${res.statusText}`);
-    return { ok: true, data };
+  });
+  instance.on(StreamingEvents.STREAM_DISCONNECTED, () => {
+    if (videoEl) videoEl.srcObject = null;
+    startBtn.disabled = false;
+    endBtn.disabled = true;
+  });
+}
+
+// ---- LIFECYCLE ----
+async function startSession() {
+  startBtn.disabled = true;
+  try {
+    const token = await fetchAccessToken();
+    avatar = new StreamingAvatar({ token });
+
+    attachVideoOnReady(avatar);
+
+    const startArgs = {
+      quality: AvatarQuality.High,
+      ...(AVATAR_ID ? { avatarId: AVATAR_ID } : { avatarName: AVATAR_NAME }),
+    };
+
+    await avatar.createStartAvatar(startArgs);
+
+    endBtn.disabled = false;
   } catch (err) {
-    return { ok: false, error: err.message || String(err) };
+    console.error("Failed to start session:", err);
+    startBtn.disabled = false;
+    alert("Start failed. Check console for details.");
+  }
+}
+
+async function endSession() {
+  if (!avatar) return;
+  try {
+    await avatar.stopAvatar();
   } finally {
-    t.clear();
+    if (videoEl) videoEl.srcObject = null;
+    avatar = null;
+    startBtn.disabled = false;
+    endBtn.disabled = true;
   }
 }
 
-async function httpPost(path, body, { timeout = DEFAULT_TIMEOUT_MS, headers = {} } = {}) {
-  const t = withTimeout(timeout);
+async function speak() {
+  if (!avatar) return;
+  const text = inputEl.value.trim();
+  if (!text) return;
   try {
-    const res = await fetch(`${API_BASE}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json", ...headers },
-      body: JSON.stringify(body || {}),
-      signal: t.signal
-    });
-    const contentType = res.headers.get("content-type") || "";
-    let data = null;
-    if (contentType.includes("application/json")) {
-      data = await res.json();
-    } else {
-      data = await res.text();
-    }
-    if (!res.ok) throw new Error(`POST ${path} -> ${res.status} ${res.statusText}`);
-    return { ok: true, data };
+    await avatar.speak({ text, taskType: TaskType.REPEAT }); // or TaskType.TALK
+    inputEl.value = "";
   } catch (err) {
-    return { ok: false, error: err.message || String(err) };
-  } finally {
-    t.clear();
+    console.error("Speak failed:", err);
   }
 }
 
-// ========= TEXT HELPERS =========
-function coursesToText(data) {
-  if (!data || !Array.isArray(data.courses)) return "No courses available at the moment.";
-  const lines = data.courses.map(c => c.summary || JSON.stringify(c));
-  return lines.length ? lines.join("\n") : "No courses available at the moment.";
-}
-
-function faqsToText(data) {
-  if (!Array.isArray(data) || !data.length) return "No FAQs available right now.";
-  return data.map(f => `${f.question}: ${f.answer}`).join("\n");
-}
-
-function enrollmentsToText(data) {
-  if (!Array.isArray(data) || !data.length) return "No recent enrollments.";
-  return data.map(e => `${e.full_name} enrolled in ${e.program_code || "a course"} on ${e.created_at}`).join("\n");
-}
-
-// ========= PUBLIC API (STRUCTURED) =========
-async function fetchCourses() {
-  const res = await httpGet("/courses/summary/all");
-  return res.ok ? res : { ok: false, error: "Live system is unreachable. Please try again later." };
-}
-
-async function fetchFaqs() {
-  const res = await httpGet("/faqs");
-  return res.ok ? res : { ok: false, error: "FAQs are not available right now." };
-}
-
-async function fetchRecentEnrollments(limit = 10, source) {
-  const headers = {};
-  if (ADMIN_KEY) headers["X-Admin-Key"] = ADMIN_KEY;
-
-  const q = new URLSearchParams();
-  if (limit) q.set("limit", String(limit));
-  if (source) q.set("source", String(source));
-
-  const path = `/enrollments/recent${q.toString() ? `?${q.toString()}` : ""}`;
-  const res = await httpGet(path, { headers });
-  return res.ok ? res : { ok: false, error: "Unable to retrieve recent enrollments." };
-}
-
-async function createEnrollment(payload) {
-  const res = await httpPost("/enroll", payload);
-  return res.ok ? res : { ok: false, error: "Unable to create enrollment. Please try again." };
-}
-
-async function pingHealth() {
-  return httpGet("/health");
-}
-
-async function fetchHeygenToken() {
-  const headers = {};
-  if (ADMIN_KEY) headers["X-Admin-Key"] = ADMIN_KEY;
-  return httpPost("/heygen/token", {}, { headers });
-}
-
-// === HeyGen session helpers ===
-function startHeygenTokenAutoRefresh() {
-  if (_tokenTimer) clearInterval(_tokenTimer);
-  _tokenTimer = setInterval(async () => {
-    const r = await fetchHeygenToken();
-    if (r.ok && r.data?.session_token) {
-      window.HeygenSession.session_token = r.data.session_token;
-      console.log("[HeyGen] token refreshed");
-    }
-  }, 240_000); // refresh ~4 min
-}
-
-async function prepareHeygenSession() {
-  const r = await fetchHeygenToken();
-  if (!r.ok) return r;
-  const { session_token, avatar_id } = r.data || r;
-  window.HeygenSession = { session_token, avatar_id }; // stash for next step
-  startHeygenTokenAutoRefresh();
-  return { ok: true, data: window.HeygenSession };
-}
-
-async function startHeygenStreaming() {
-  if (!window.HeygenSession) return { ok:false, error:"No session. Click Prepare first." };
-
-  const { session_token, avatar_id } = window.HeygenSession;
-
-  try {
-    avatar = new StreamingAvatar({ token: session_token });
-
-    await avatar.createStartAvatar({
-      avatarName: avatar_id,
-      quality: "high"
-    });
-
-    console.log("[HeyGen] Streaming started with avatar:", avatar_id);
-    return { ok:true };
-  } catch (err) {
-    console.error("[HeyGen] failed:", err);
-    return { ok:false, error:String(err) };
-  }
-}
-
-// ========= PUBLIC API (READABLE TEXT) =========
-async function fetchCoursesText() {
-  const r = await fetchCourses();
-  if (!r.ok) return "Sorry, my live system is unreachable. Please try again later.";
-  return coursesToText(r.data);
-}
-
-async function fetchFaqsText() {
-  const r = await fetchFaqs();
-  if (!r.ok) return "Sorry, FAQs are not available right now.";
-  return faqsToText(r.data);
-}
-
-async function fetchRecentEnrollmentsText(limit = 10, source) {
-  const r = await fetchRecentEnrollments(limit, source);
-  if (!r.ok) return "Sorry, I can’t retrieve recent enrollments right now.";
-  return enrollmentsToText(r.data);
-}
-
-// ========= FALLBACK CHAT/ROUTER =========
-async function askBackend(utterance) {
-  const u = String(utterance || "").toLowerCase();
-  if (u.includes("course")) return { ok: true, data: await fetchCoursesText() };
-  if (u.includes("faq"))    return { ok: true, data: await fetchFaqsText() };
-  const res = await httpPost("/chat", { message: utterance });
-  if (!res.ok) return { ok: false, error: "Chat service is unavailable." };
-  return res;
-}
-
-// ========= EXPOSE TO WINDOW =========
-window.BCM = {
-  setApiBase: (url) => { API_BASE = String(url || API_BASE); },
-  getApiBase: () => API_BASE,
-  setAdminKey: (key) => { ADMIN_KEY = key || undefined; },
-
-  fetchCourses,
-  fetchFaqs,
-  fetchRecentEnrollments,
-  createEnrollment,
-  pingHealth,
-  askBackend,
-
-  fetchCoursesText,
-  fetchFaqsText,
-  fetchRecentEnrollmentsText,
-
-  fetchHeygenToken,
-  prepareHeygenSession,
-  startHeygenStreaming
-};
-
-console.log("[BCM] bridge ready (ESM)", typeof window.BCM);
+// ---- WIRE UP ----
+startBtn.addEventListener("click", startSession);
+endBtn.addEventListener("click", endSession);
+speakBtn.addEventListener("click", speak);
