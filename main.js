@@ -6,7 +6,7 @@
    - Adds HeyGen Streaming (ES module)
    =========================== */
 
-import { StreamingAvatar } from "@heygen/streaming-avatar";
+import { StreamingAvatar } from "streamingavatarsdk";
 import { Room } from "livekit-client";
 
 console.log("[BCM] main.js loaded (ESM)");
