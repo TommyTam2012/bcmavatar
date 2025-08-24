@@ -6,7 +6,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     html, body { height:100%; margin:0; background:#000; }
-    /* Dev-only mini tester styles */
     #bcm-tester { position:fixed; right:14px; bottom:14px; z-index:99999; max-width:360px;
       background:#0b1220; color:#e6eefc; border:1px solid #2a3a5a; border-radius:14px; padding:12px; font:14px/1.35 system-ui; }
     #bcm-tester button { padding:6px 10px; border:0; border-radius:10px; background:#1e2b4a; color:#cfe0ff; cursor:pointer; }
@@ -14,8 +13,6 @@
   </style>
 </head>
 <body>
-
-  <!-- Dev-only mini tester -->
   <div id="bcm-tester">
     <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:8px;">
       <strong>BCM Tester</strong>
@@ -33,10 +30,7 @@
     <textarea id="bcm-out" rows="8" placeholder="Output appears here..."></textarea>
   </div>
 
-  <!-- Load as ES module -->
   <script type="module" src="/main.js"></script>
-
-  <!-- Wire tester -->
   <script type="module">
     const $ = id => document.getElementById(id);
     const box = $('bcm-tester'), out = $('bcm-out');
@@ -47,15 +41,13 @@
     $('btn-faqs').onclick    = async () => { out.value = await BCM.fetchFaqsText(); };
 
     $('btn-token').onclick   = async () => {
-      const key = prompt('X-Admin-Key?');
-      if (key) BCM.setAdminKey(key);
+      const key = prompt('X-Admin-Key?'); if (key) BCM.setAdminKey(key);
       const r = await BCM.fetchHeygenToken();
       out.value = JSON.stringify(r.data || r, null, 2);
     };
 
     $('btn-prepare').onclick = async () => {
-      const key = prompt('X-Admin-Key? (needed once)');
-      if (key) BCM.setAdminKey(key);
+      const key = prompt('X-Admin-Key? (needed once)'); if (key) BCM.setAdminKey(key);
       const r = await BCM.prepareHeygenSession();
       out.value = JSON.stringify(r.data || r, null, 2);
     };
