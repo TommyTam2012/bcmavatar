@@ -6,8 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     html, body { height:100%; margin:0; background:#000; }
-    iframe { width:100%; height:100%; border:0; display:block; }
-    /* Dev-only mini tester styles (non-intrusive) */
+    /* Dev-only mini tester styles */
     #bcm-tester { position:fixed; right:14px; bottom:14px; z-index:99999; max-width:360px;
       background:#0b1220; color:#e6eefc; border:1px solid #2a3a5a; border-radius:14px; padding:12px; font:14px/1.35 system-ui; }
     #bcm-tester button { padding:6px 10px; border:0; border-radius:10px; background:#1e2b4a; color:#cfe0ff; cursor:pointer; }
@@ -15,11 +14,6 @@
   </style>
 </head>
 <body>
-  <iframe
-    src="https://labs.heygen.com/interactive-avatar/share?share=eyJxdWFsaXR5IjoiaGlnaCIsImF2YXRhck5hbWUiOiJlMzA1NDViNDgwNGM0YzhmYTM4NDg3YjVi%0D%0AZTJkNmQ1YyIsInByZXZpZXdJbWciOiJodHRwczovL2ZpbGVzMi5oZXlnZW4uYWkvYXZhdGFyL3Yz%0D%0AL2UzMDU0NWI0ODA0YzRjOGZhMzg0ODdiNWJlMmQ2ZDVjL2Z1bGwvMi4yL3ByZXZpZXdfdGFyZ2V0%0D%0ALndlYnAiLCJuZWVkUmVtb3ZlQmFja2dyb3VuZCI6ZmFsc2UsImtub3dsZWRnZUJhc2VJZCI6IjNh%0D%0AYTNjZjlhNzg1ZDQ1YmM5ZjcyYTZhNDI0ZmI2MDFmIiwic2hhcmVfY29kZSI6ImEwZWM3NDMzLWVl%0D%0AZjYtNGJjNy1iMzZiLTYxYmMxNGExM2YzMCIsInVzZXJuYW1lIjoiZTUxZWZmM2YyYWMwNGRmY2I0%0D%0ANzBkMzZjNjlkYjFjZTYifQ%3D%3D"
-    allow="camera; microphone; autoplay; encrypted-media; clipboard-write; fullscreen"
-    allowfullscreen
-  ></iframe>
 
   <!-- Dev-only mini tester (remove later if you want) -->
   <div id="bcm-tester">
@@ -31,6 +25,7 @@
       <button id="btn-health">Health</button>
       <button id="btn-courses">Courses</button>
       <button id="btn-faqs">FAQs</button>
+      <button id="btn-token">Token</button>
       <button id="btn-enroll">Test Enroll</button>
     </div>
     <textarea id="bcm-out" rows="8" placeholder="Output appears here..."></textarea>
@@ -45,9 +40,18 @@
       const $ = id => document.getElementById(id);
       const box = $('bcm-tester'), out = $('bcm-out');
       $('bcm-close').onclick = () => box.remove();
+
       $('btn-health').onclick  = async () => { out.value = JSON.stringify(await BCM.pingHealth(), null, 2); };
       $('btn-courses').onclick = async () => { out.value = await BCM.fetchCoursesText(); };
       $('btn-faqs').onclick    = async () => { out.value = await BCM.fetchFaqsText(); };
+
+      $('btn-token').onclick   = async () => {
+        const key = prompt('X-Admin-Key?');
+        if (key) BCM.setAdminKey(key);
+        const r = await BCM.fetchHeygenToken();
+        out.value = JSON.stringify(r.data || r, null, 2);
+      };
+
       $('btn-enroll').onclick  = async () => {
         const r = await BCM.createEnrollment({
           full_name: "Tester " + Math.floor(Math.random()*1000),
