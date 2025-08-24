@@ -137,11 +137,24 @@ async function fetchHeygenToken() {
 }
 
 // === NEW: Heygen session helpers ===
+let _tokenTimer = null;
+function startHeygenTokenAutoRefresh() {
+  if (_tokenTimer) clearInterval(_tokenTimer);
+  _tokenTimer = setInterval(async () => {
+    const r = await fetchHeygenToken();
+    if (r.ok && r.data?.session_token) {
+      window.HeygenSession.session_token = r.data.session_token;
+      console.log("[HeyGen] token refreshed");
+    }
+  }, 240_000); // refresh ~4 min
+}
+
 async function prepareHeygenSession() {
   const r = await fetchHeygenToken();
   if (!r.ok) return r;
   const { session_token, avatar_id } = r.data || r;
   window.HeygenSession = { session_token, avatar_id }; // stash for next step
+  startHeygenTokenAutoRefresh();
   return { ok: true, data: window.HeygenSession };
 }
 
