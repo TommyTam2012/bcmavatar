@@ -164,8 +164,8 @@ async function startHeygenStreaming() {
   const { session_token, avatar_id } = window.HeygenSession;
 
   try {
-    // create Heygen streaming client
-    const client = new Heygen.StreamingClient();
+    // create Heygen streaming client (UMD global: HeygenStreaming)
+    const client = new HeygenStreaming.StreamingClient();
     await client.connect({ token: session_token, avatarId: avatar_id });
     window.HeygenClient = client;
 
