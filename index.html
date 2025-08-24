@@ -15,7 +15,7 @@
 </head>
 <body>
 
-  <!-- Dev-only mini tester (remove later if you want) -->
+  <!-- Dev-only mini tester -->
   <div id="bcm-tester">
     <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:8px;">
       <strong>BCM Tester</strong>
@@ -33,54 +33,48 @@
     <textarea id="bcm-out" rows="8" placeholder="Output appears here..."></textarea>
   </div>
 
-  <!-- Load external SDKs before BCM bridge -->
-  <script src="https://unpkg.com/livekit-client/dist/livekit-client.umd.js"></script>
-  <script src="https://unpkg.com/@heygen/streaming-sdk/dist/index.umd.js"></script>
+  <!-- Load as ES module -->
+  <script type="module" src="/main.js"></script>
 
-  <!-- Load BCM bridge -->
-  <script src="/script.js" defer></script>
+  <!-- Wire tester -->
+  <script type="module">
+    const $ = id => document.getElementById(id);
+    const box = $('bcm-tester'), out = $('bcm-out');
+    $('bcm-close').onclick = () => box.remove();
 
-  <!-- Wire tester after bridge is available -->
-  <script>
-    (function () {
-      const $ = id => document.getElementById(id);
-      const box = $('bcm-tester'), out = $('bcm-out');
-      $('bcm-close').onclick = () => box.remove();
+    $('btn-health').onclick  = async () => { out.value = JSON.stringify(await BCM.pingHealth(), null, 2); };
+    $('btn-courses').onclick = async () => { out.value = await BCM.fetchCoursesText(); };
+    $('btn-faqs').onclick    = async () => { out.value = await BCM.fetchFaqsText(); };
 
-      $('btn-health').onclick  = async () => { out.value = JSON.stringify(await BCM.pingHealth(), null, 2); };
-      $('btn-courses').onclick = async () => { out.value = await BCM.fetchCoursesText(); };
-      $('btn-faqs').onclick    = async () => { out.value = await BCM.fetchFaqsText(); };
+    $('btn-token').onclick   = async () => {
+      const key = prompt('X-Admin-Key?');
+      if (key) BCM.setAdminKey(key);
+      const r = await BCM.fetchHeygenToken();
+      out.value = JSON.stringify(r.data || r, null, 2);
+    };
 
-      $('btn-token').onclick   = async () => {
-        const key = prompt('X-Admin-Key?');
-        if (key) BCM.setAdminKey(key);
-        const r = await BCM.fetchHeygenToken();
-        out.value = JSON.stringify(r.data || r, null, 2);
-      };
+    $('btn-prepare').onclick = async () => {
+      const key = prompt('X-Admin-Key? (needed once)');
+      if (key) BCM.setAdminKey(key);
+      const r = await BCM.prepareHeygenSession();
+      out.value = JSON.stringify(r.data || r, null, 2);
+    };
 
-      $('btn-prepare').onclick = async () => {
-        const key = prompt('X-Admin-Key? (needed once)');
-        if (key) BCM.setAdminKey(key);
-        const r = await BCM.prepareHeygenSession();
-        $('bcm-out').value = JSON.stringify(r.data || r, null, 2);
-      };
+    $('btn-start').onclick = async () => {
+      const r = await BCM.startHeygenStreaming();
+      out.value = JSON.stringify(r, null, 2);
+    };
 
-      $('btn-start').onclick = async () => {
-        const r = await BCM.startHeygenStreaming();
-        $('bcm-out').value = JSON.stringify(r, null, 2);
-      };
-
-      $('btn-enroll').onclick  = async () => {
-        const r = await BCM.createEnrollment({
-          full_name: "Tester " + Math.floor(Math.random()*1000),
-          email: "tester@example.com",
-          phone: "12345678",
-          course_id: 1,
-          source: "avatar"
-        });
-        out.value = JSON.stringify(r, null, 2);
-      };
-    })();
+    $('btn-enroll').onclick  = async () => {
+      const r = await BCM.createEnrollment({
+        full_name: "Tester " + Math.floor(Math.random()*1000),
+        email: "tester@example.com",
+        phone: "12345678",
+        course_id: 1,
+        source: "avatar"
+      });
+      out.value = JSON.stringify(r, null, 2);
+    };
   </script>
 </body>
 </html>
