@@ -159,10 +159,22 @@ async function prepareHeygenSession() {
 }
 
 async function startHeygenStreaming() {
-  if (!window.HeygenSession) return { ok:false, error:"No session. Click Token/Prepare first." };
-  // TODO(next): init LiveKit/HeyGen Streaming with session_token + avatar_id
-  console.log("[HeyGen] ready:", window.HeygenSession);
-  return { ok:true };
+  if (!window.HeygenSession) return { ok:false, error:"No session. Click Prepare first." };
+
+  const { session_token, avatar_id } = window.HeygenSession;
+
+  try {
+    // create HeyGen streaming client
+    const client = new HeyGen.StreamingClient();
+    await client.connect({ token: session_token, avatarId: avatar_id });
+    window.HeygenClient = client;
+
+    console.log("[HeyGen] streaming session started");
+    return { ok:true };
+  } catch (err) {
+    console.error("[HeyGen] failed:", err);
+    return { ok:false, error:String(err) };
+  }
 }
 
 /** ===== PUBLIC API (READABLE TEXT) ===== **/
