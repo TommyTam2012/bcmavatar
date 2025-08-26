@@ -1,28 +1,28 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>BCM Avatar (Iframe Demo)</title>
-    <style>
-      html, body {
-        margin: 0;
-        height: 100%;
-        background: #000;
-      }
-      iframe {
-        width: 100%;
-        height: 100%;
-        border: 0;
-        display: block;
-      }
-    </style>
-  </head>
-  <body>
-    <!-- Heygen interactive avatar iframe -->
-    <iframe
-      src="https://labs.heygen.com/interactive-avatar/share?avatarId=c5e81098eb3e46189740b6156b3ac85a"
-      allow="microphone; camera"
-    ></iframe>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BCM Streaming Avatar</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 2rem; }
+    video { width: 480px; height: 270px; background:#000; display:block; margin:1rem 0; }
+    .row { display:flex; gap:.5rem; margin:.5rem 0; }
+    input { width: 360px; padding:.5rem; }
+    button { padding:.5rem .9rem; }
+  </style>
+</head>
+<body>
+  <h1>BCM Streaming Avatar</h1>
+  <video id="avatarVideo" autoplay playsinline></video>
+  <div class="row">
+    <button id="startSession">Start</button>
+    <button id="endSession" disabled>End</button>
+  </div>
+  <div class="row">
+    <input id="userInput" type="text" placeholder="Type something for the avatar to say…" />
+    <button id="speakButton">Speak</button>
+  </div>
+  <script type="module" src="/main.js"></script>
+</body>
 </html>
