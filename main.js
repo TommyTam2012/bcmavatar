@@ -9,7 +9,7 @@ window.fetch = async (input, init = {}) => {
       // Add admin key to reach our proxy
       init.headers = {
         ...(init.headers || {}),
-        "X-Admin-Key": import.meta.env.VITE_BCM_ADMIN_KEY,
+        "Admin-Key": import.meta.env.VITE_BCM_ADMIN_KEY,
       };
       url = `${import.meta.env.VITE_BACKEND_BASE}/heygen/proxy/${subpath}`;
       input = url;
@@ -47,7 +47,7 @@ async function fetchAccessToken() {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Admin-Key": import.meta.env.VITE_BCM_ADMIN_KEY, // must match Render ADMIN_KEY
+      "Admin-Key": import.meta.env.VITE_BCM_ADMIN_KEY, // must match Render ADMIN_KEY
     },
     cache: "no-store",
   });
