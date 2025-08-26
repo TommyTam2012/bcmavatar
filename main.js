@@ -10,7 +10,7 @@ const BACKEND_BASE =
 
 // Set ONE of these (name or id). Replace with your avatar if needed.
 const AVATAR_NAME = "Wayne_20240711"; // change to yours
-const AVATAR_ID = null;               // or e.g. "e30545b4804c4c8fa38487b5be2d6d5c"
+const AVATAR_ID = "c5e81098eb3e46189740b6156b3ac85a"; // or null if using name
 
 // ---- DOM ----
 const videoEl = document.getElementById("avatarVideo");
@@ -26,9 +26,17 @@ let avatar = null;
 async function fetchAccessToken() {
   const res = await fetch(`${BACKEND_BASE}/heygen/token`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Admin-Key": import.meta.env.VITE_BCM_ADMIN_KEY, // 🔑 added
+    },
     cache: "no-store",
   });
+
+  if (!res.ok) {
+    throw new Error(`Token fetch failed: ${res.status} ${res.statusText}`);
+  }
+
   const json = await res.json();
   // support several shapes
   return json?.data?.token || json?.session_token || json?.token;
