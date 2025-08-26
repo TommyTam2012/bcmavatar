@@ -9,12 +9,18 @@ window.fetch = async (input, init = {}) => {
       init = init || {};
       init.headers = {
         ...(init.headers || {}),
-        "Admin-Key": import.meta.env.VITE_BCM_ADMIN_KEY,  // must match Render ADMIN_KEY
+        "Admin-Key": import.meta.env.VITE_BCM_ADMIN_KEY, // must match backend ADMIN_KEY
       };
+
+      console.log("[DEBUG] Proxying HeyGen API →", url);
+      console.log("[DEBUG] Admin-Key header (shim) =", import.meta.env.VITE_BCM_ADMIN_KEY);
+
       url = `${import.meta.env.VITE_BACKEND_BASE}/heygen/proxy/${subpath}`;
       input = url;
     }
-  } catch (_) {}
+  } catch (err) {
+    console.warn("[DEBUG] fetch shim error:", err);
+  }
   return ORIG_FETCH(input, init);
 };
 
@@ -46,19 +52,33 @@ window.fetch = async (input, init = {}) => {
 
   // ---- HELPERS ----
   async function fetchAccessToken() {
+    console.log("[DEBUG] Hitting backend for token →", `${BACKEND_BASE}/heygen/token`);
+    console.log("[DEBUG] Admin-Key header (fetchAccessToken) =", import.meta.env.VITE_BCM_ADMIN_KEY);
+
     const res = await fetch(`${BACKEND_BASE}/heygen/token`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Admin-Key": import.meta.env.VITE_BCM_ADMIN_KEY, // matches Render ADMIN_KEY
+        "Admin-Key": import.meta.env.VITE_BCM_ADMIN_KEY, // must match backend ADMIN_KEY
       },
       cache: "no-store",
     });
 
+    console.log("[DEBUG] Token fetch response status:", res.status, res.statusText);
+    const raw = await res.text();
+    console.log("[DEBUG] Raw backend response:", raw);
+
     if (!res.ok) {
-      throw new Error(`Token fetch failed: ${res.status} ${res.statusText}`);
+      throw new Error(`Token fetch failed: ${res.status} ${res.statusText} | ${raw}`);
     }
-    const json = await res.json();
+
+    let json;
+    try {
+      json = JSON.parse(raw);
+    } catch (err) {
+      throw new Error("Failed to parse backend JSON: " + raw);
+    }
+
     const token = json?.session_token;
     if (!token) throw new Error("No session_token returned from backend");
     return token;
@@ -83,9 +103,10 @@ window.fetch = async (input, init = {}) => {
   async function startSession() {
     startBtn.disabled = true;
     try {
-      const token = await fetchAccessToken();        // hits /heygen/token (must be 200)
-      avatar = new StreamingAvatar({ token });       // SDK loads AFTER shim
+      const token = await fetchAccessToken();        // hits /heygen/token
+      console.log("[DEBUG] Received session_token =", token);
 
+      avatar = new StreamingAvatar({ token });       // SDK loads AFTER shim
       attachVideoOnReady(avatar);
 
       await avatar.createStartAvatar({
