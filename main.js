@@ -9,11 +9,11 @@ window.fetch = async (input, init = {}) => {
       init = init || {};
       init.headers = {
         ...(init.headers || {}),
-        "Admin-Key": import.meta.env.VITE_BCM_ADMIN_KEY, // must match backend ADMIN_KEY
+        "X-Admin-Key": import.meta.env.VITE_BCM_ADMIN_KEY, // must match backend ADMIN_KEY
       };
 
       console.log("[DEBUG] Proxying HeyGen API →", url);
-      console.log("[DEBUG] Admin-Key header (shim) =", import.meta.env.VITE_BCM_ADMIN_KEY);
+      console.log("[DEBUG] X-Admin-Key header (shim) =", import.meta.env.VITE_BCM_ADMIN_KEY);
 
       url = `${import.meta.env.VITE_BACKEND_BASE}/heygen/proxy/${subpath}`;
       input = url;
@@ -53,13 +53,13 @@ window.fetch = async (input, init = {}) => {
   // ---- HELPERS ----
   async function fetchAccessToken() {
     console.log("[DEBUG] Hitting backend for token →", `${BACKEND_BASE}/heygen/token`);
-    console.log("[DEBUG] Admin-Key header (fetchAccessToken) =", import.meta.env.VITE_BCM_ADMIN_KEY);
+    console.log("[DEBUG] X-Admin-Key header (fetchAccessToken) =", import.meta.env.VITE_BCM_ADMIN_KEY);
 
     const res = await fetch(`${BACKEND_BASE}/heygen/token`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Admin-Key": import.meta.env.VITE_BCM_ADMIN_KEY, // must match backend ADMIN_KEY
+        "X-Admin-Key": import.meta.env.VITE_BCM_ADMIN_KEY, // must match backend ADMIN_KEY
       },
       cache: "no-store",
     });
