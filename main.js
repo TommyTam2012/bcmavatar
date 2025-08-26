@@ -18,7 +18,6 @@ window.fetch = async (input, init = {}) => {
   return ORIG_FETCH(input, init);
 };
 
-// --- HeyGen SDK ---
 import StreamingAvatar, {
   AvatarQuality,
   StreamingEvents,
