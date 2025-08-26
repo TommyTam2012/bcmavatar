@@ -8,9 +8,8 @@ import StreamingAvatar, {
 const BACKEND_BASE =
   import.meta.env.VITE_BACKEND_BASE || "https://bcm-demo.onrender.com";
 
-// Set ONE of these (name or id). Replace with your avatar if needed.
-const AVATAR_NAME = "Wayne_20240711"; // change to yours
-const AVATAR_ID = "c5e81098eb3e46189740b6156b3ac85a"; // or null if using name
+// Use your assigned avatar ID
+const AVATAR_ID = "c5e81098eb3e46189740b6156b3ac85a";
 
 // ---- DOM ----
 const videoEl = document.getElementById("avatarVideo");
@@ -28,7 +27,7 @@ async function fetchAccessToken() {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Admin-Key": import.meta.env.VITE_BCM_ADMIN_KEY, // 🔑 added
+      "X-Admin-Key": import.meta.env.VITE_BCM_ADMIN_KEY, // must match Render ADMIN_KEY
     },
     cache: "no-store",
   });
@@ -38,8 +37,11 @@ async function fetchAccessToken() {
   }
 
   const json = await res.json();
-  // support several shapes
-  return json?.data?.token || json?.session_token || json?.token;
+  const token = json?.session_token;
+  if (!token) {
+    throw new Error("No session_token returned from backend");
+  }
+  return token;
 }
 
 function attachVideoOnReady(instance) {
@@ -68,7 +70,7 @@ async function startSession() {
 
     const startArgs = {
       quality: AvatarQuality.High,
-      ...(AVATAR_ID ? { avatarId: AVATAR_ID } : { avatarName: AVATAR_NAME }),
+      avatarId: AVATAR_ID,
     };
 
     await avatar.createStartAvatar(startArgs);
