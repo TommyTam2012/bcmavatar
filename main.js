@@ -1,3 +1,24 @@
+// --- fetch shim: redirect api.heygen.com/v1/* to our backend proxy ---
+const ORIG_FETCH = window.fetch;
+window.fetch = async (input, init = {}) => {
+  try {
+    let url = typeof input === "string" ? input : input.url;
+
+    if (url.startsWith("https://api.heygen.com/v1/")) {
+      const subpath = url.slice("https://api.heygen.com/v1/".length);
+      // Add admin key to reach our proxy
+      init.headers = {
+        ...(init.headers || {}),
+        "X-Admin-Key": import.meta.env.VITE_BCM_ADMIN_KEY,
+      };
+      url = `${import.meta.env.VITE_BACKEND_BASE}/heygen/proxy/${subpath}`;
+      input = url;
+    }
+  } catch (_) {}
+  return ORIG_FETCH(input, init);
+};
+
+// --- HeyGen SDK ---
 import StreamingAvatar, {
   AvatarQuality,
   StreamingEvents,
