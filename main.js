@@ -122,7 +122,7 @@ window.fetch = async (input, init = {}) => {
     const text = inputEl.value.trim();
     if (!text) return;
     try {
-      await avatar.speak({ text, taskType: TaskType.REPEAT });
+      await avatar.speak({ text, taskType: TaskType.TALK });
       inputEl.value = "";
     } catch (err) {
       console.error("Speak failed:", err);
