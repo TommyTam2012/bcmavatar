@@ -1,4 +1,4 @@
-// 1) Install fetch shim FIRST, before we load the SDK
+// --- Fetch shim: intercept HeyGen API calls before SDK loads ---
 const ORIG_FETCH = window.fetch;
 window.fetch = async (input, init = {}) => {
   try {
@@ -6,25 +6,23 @@ window.fetch = async (input, init = {}) => {
 
     if (url && url.startsWith("https://api.heygen.com/v1/")) {
       const subpath = url.slice("https://api.heygen.com/v1/".length);
+
       init = init || {};
       init.headers = {
         ...(init.headers || {}),
         "X-Admin-Key": import.meta.env.VITE_BCM_ADMIN_KEY, // must match backend ADMIN_KEY
       };
 
-      console.log("[DEBUG] Proxying HeyGen API →", url);
-      console.log("[DEBUG] X-Admin-Key header (shim) =", import.meta.env.VITE_BCM_ADMIN_KEY);
-
       url = `${import.meta.env.VITE_BACKEND_BASE}/heygen/proxy/${subpath}`;
       input = url;
     }
   } catch (err) {
-    console.warn("[DEBUG] fetch shim error:", err);
+    console.warn("[Shim] fetch override error:", err);
   }
   return ORIG_FETCH(input, init);
 };
 
-// 2) Wrap everything else so we can dynamically import the SDK AFTER the shim is installed
+// --- Main app: load SDK only after shim is installed ---
 (async () => {
   const {
     default: StreamingAvatar,
@@ -36,8 +34,7 @@ window.fetch = async (input, init = {}) => {
   // ---- CONFIG ----
   const BACKEND_BASE =
     import.meta.env.VITE_BACKEND_BASE || "https://bcm-demo.onrender.com";
-
-  // Use your assigned avatar ID
+  const ADMIN_KEY = import.meta.env.VITE_BCM_ADMIN_KEY || "";
   const AVATAR_ID = "c5e81098eb3e46189740b6156b3ac85a";
 
   // ---- DOM ----
@@ -51,40 +48,25 @@ window.fetch = async (input, init = {}) => {
   let avatar = null;
 
   // ---- HELPERS ----
-  async function fetchAccessToken() {
-    console.log("[DEBUG] Hitting backend for token →", `${BACKEND_BASE}/heygen/token`);
-    console.log("[DEBUG] X-Admin-Key header (fetchAccessToken) =", import.meta.env.VITE_BCM_ADMIN_KEY);
-
+  async function fetchSessionToken() {
     const res = await fetch(`${BACKEND_BASE}/heygen/token`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Admin-Key": import.meta.env.VITE_BCM_ADMIN_KEY, // must match backend ADMIN_KEY
-      },
+      headers: { "X-Admin-Key": ADMIN_KEY },
       cache: "no-store",
     });
 
-    console.log("[DEBUG] Token fetch response status:", res.status, res.statusText);
-    const raw = await res.text();
-    console.log("[DEBUG] Raw backend response:", raw);
-
     if (!res.ok) {
-      throw new Error(`Token fetch failed: ${res.status} ${res.statusText} | ${raw}`);
+      const text = await res.text();
+      throw new Error(`Token fetch failed: ${res.status} ${res.statusText} | ${text}`);
     }
 
-    let json;
-    try {
-      json = JSON.parse(raw);
-    } catch (err) {
-      throw new Error("Failed to parse backend JSON: " + raw);
-    }
-
-    const token = json?.session_token;
-    if (!token) throw new Error("No session_token returned from backend");
+    const data = await res.json();
+    const token = data?.session_token;
+    if (!token) throw new Error("No session_token in backend response");
     return token;
   }
 
-  function attachVideoOnReady(instance) {
+  function attachVideoHandlers(instance) {
     instance.on(StreamingEvents.STREAM_READY, (ev) => {
       const stream = ev.detail;
       if (stream && videoEl) {
@@ -92,6 +74,7 @@ window.fetch = async (input, init = {}) => {
         videoEl.onloadedmetadata = () => videoEl.play().catch(console.error);
       }
     });
+
     instance.on(StreamingEvents.STREAM_DISCONNECTED, () => {
       if (videoEl) videoEl.srcObject = null;
       startBtn.disabled = false;
@@ -103,11 +86,11 @@ window.fetch = async (input, init = {}) => {
   async function startSession() {
     startBtn.disabled = true;
     try {
-      const token = await fetchAccessToken();        // hits /heygen/token
-      console.log("[DEBUG] Received session_token =", token);
+      const token = await fetchSessionToken();
+      console.log("[INFO] Got session_token:", token);
 
-      avatar = new StreamingAvatar({ token });       // SDK loads AFTER shim
-      attachVideoOnReady(avatar);
+      avatar = new StreamingAvatar({ token });
+      attachVideoHandlers(avatar);
 
       await avatar.createStartAvatar({
         quality: AvatarQuality.High,
@@ -139,7 +122,7 @@ window.fetch = async (input, init = {}) => {
     const text = inputEl.value.trim();
     if (!text) return;
     try {
-      await avatar.speak({ text, taskType: TaskType.REPEAT }); // or TaskType.TALK
+      await avatar.speak({ text, taskType: TaskType.REPEAT });
       inputEl.value = "";
     } catch (err) {
       console.error("Speak failed:", err);
