@@ -1,20 +1,17 @@
-// --- Fetch shim: intercept HeyGen API calls before SDK loads ---
+// --- Fetch shim: intercept HeyGen API calls BEFORE the SDK loads ---
+// We do NOT send any admin key from the browser.
+// All SDK calls to https://api.heygen.com/v1/* are routed to our backend proxy.
 const ORIG_FETCH = window.fetch;
 window.fetch = async (input, init = {}) => {
   try {
-    let url = typeof input === "string" ? input : input.url;
+    let url = typeof input === "string" ? input : input?.url;
 
     if (url && url.startsWith("https://api.heygen.com/v1/")) {
       const subpath = url.slice("https://api.heygen.com/v1/".length);
-
-      init = init || {};
-      init.headers = {
-        ...(init.headers || {}),
-        "X-Admin-Key": import.meta.env.VITE_BCM_ADMIN_KEY, // must match backend ADMIN_KEY
-      };
-
-      url = `${import.meta.env.VITE_BACKEND_BASE}/heygen/proxy/${subpath}`;
-      input = url;
+      const base = (import.meta?.env?.VITE_BACKEND_BASE || "https://bcm-demo.onrender.com")
+        .replace(/\/$/, "");
+      input = `${base}/heygen/proxy/${subpath}`;
+      // No headers added here; backend proxy will attach Authorization with HEYGEN_API_KEY
     }
   } catch (err) {
     console.warn("[Shim] fetch override error:", err);
@@ -22,7 +19,7 @@ window.fetch = async (input, init = {}) => {
   return ORIG_FETCH(input, init);
 };
 
-// --- Main app: load SDK only after shim is installed ---
+// --- Main app: load SDK only AFTER shim is installed ---
 (async () => {
   const {
     default: StreamingAvatar,
@@ -33,16 +30,15 @@ window.fetch = async (input, init = {}) => {
 
   // ---- CONFIG ----
   const BACKEND_BASE =
-    import.meta.env.VITE_BACKEND_BASE || "https://bcm-demo.onrender.com";
-  const ADMIN_KEY = import.meta.env.VITE_BCM_ADMIN_KEY || "";
+    (import.meta?.env?.VITE_BACKEND_BASE || "https://bcm-demo.onrender.com").replace(/\/$/, "");
   const AVATAR_ID = "c5e81098eb3e46189740b6156b3ac85a";
 
   // ---- DOM ----
-  const videoEl   = document.getElementById("avatarVideo");
-  const startBtn  = document.getElementById("startSession");
-  const endBtn    = document.getElementById("endSession");
-  const speakBtn  = document.getElementById("speakButton");
-  const inputEl   = document.getElementById("userInput");
+  const videoEl  = document.getElementById("avatarVideo");
+  const startBtn = document.getElementById("startSession");
+  const endBtn   = document.getElementById("endSession");
+  const speakBtn = document.getElementById("speakButton");
+  const inputEl  = document.getElementById("userInput");
 
   // ---- STATE ----
   let avatar = null;
@@ -51,7 +47,6 @@ window.fetch = async (input, init = {}) => {
   async function fetchSessionToken() {
     const res = await fetch(`${BACKEND_BASE}/heygen/token`, {
       method: "POST",
-      headers: { "X-Admin-Key": ADMIN_KEY },
       cache: "no-store",
     });
 
@@ -97,6 +92,9 @@ window.fetch = async (input, init = {}) => {
         avatarId: AVATAR_ID,
       });
 
+      // User clicked Start (gesture) → safe to unmute so we can hear speech
+      if (videoEl) videoEl.muted = false;
+
       endBtn.disabled = false;
     } catch (err) {
       console.error("Failed to start session:", err);
@@ -122,6 +120,7 @@ window.fetch = async (input, init = {}) => {
     const text = inputEl.value.trim();
     if (!text) return;
     try {
+      // TALK = generate speech + lipsync (REPEAT only loops motions)
       await avatar.speak({ text, taskType: TaskType.TALK });
       inputEl.value = "";
     } catch (err) {
