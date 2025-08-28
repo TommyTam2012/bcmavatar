@@ -15,7 +15,7 @@
         const subpath = url.slice("https://api.heygen.com/v1/".length);
         const base = (import.meta?.env?.VITE_BACKEND_BASE || "https://bcm-demo.onrender.com")
           .replace(/\/$/, "");
-        input = `${base}/heygen/proxy/${subpath}`;
+        input = `${base}/heygen/proxy/${subpath}`; // backend injects HEYGEN_API_KEY
       }
     } catch (err) {
       console.warn("[Shim] fetch override error:", err);
@@ -24,7 +24,7 @@
   };
 })();
 
-// --- SDK import (still used for token flow) ---
+// --- SDK import (still used for legacy token flow) ---
 import StreamingAvatar, {
   StreamingEvents,
   TaskType,
@@ -45,9 +45,9 @@ const speakBtn = document.getElementById("speakButton");
 const inputEl  = document.getElementById("userInput");
 
 // ---- STATE ----
-let avatar = null;
-let pc = null;             // WebRTC PeerConnection (for new flow)
-let currentSessionId = ""; // track session_id for speak requests
+let avatar = null;          // legacy SDK object (token flow)
+let pc = null;              // WebRTC PeerConnection (new flow)
+let currentSessionId = "";  // for streaming.start / streaming.task
 
 // ---- HELPERS ----
 async function getSessionOffer() {
@@ -61,9 +61,12 @@ async function getSessionOffer() {
   }
   const data = await res.json();
 
+  // Legacy shape (old SDK)
   if (data?.session_token || data?.token) {
     return { type: "token", token: data.session_token || data.token };
   }
+
+  // New WebRTC shape
   if (data?.data?.session_id && data?.data?.sdp) {
     return {
       type: "webrtc",
@@ -71,6 +74,7 @@ async function getSessionOffer() {
       sdp: data.data.sdp,
     };
   }
+
   throw new Error("Unexpected HeyGen response: " + JSON.stringify(data));
 }
 
@@ -87,7 +91,7 @@ startBtn?.addEventListener("click", async () => {
     const offer = await getSessionOffer();
 
     if (offer.type === "token") {
-      // --- Legacy flow (session_token) ---
+      // --- Legacy token flow ---
       avatar = new StreamingAvatar({
         token: offer.token,
         avatarId: AVATAR_ID,
@@ -116,37 +120,38 @@ startBtn?.addEventListener("click", async () => {
       console.log("✅ Got WebRTC offer from backend:", offer);
       currentSessionId = offer.session_id;
 
-      // 1. Create PeerConnection
+      // 1) Create PeerConnection
       pc = new RTCPeerConnection();
 
-      // 2. Remote track (video/audio from HeyGen)
+      // 2) Attach remote media to <video>
       pc.ontrack = (event) => {
         console.log("🎥 Remote track received:", event.streams);
         if (videoEl) videoEl.srcObject = event.streams[0];
       };
 
-      // 3. Local mic (optional: capture mic input)
+      // 3) Add local mic (optional)
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
-      // 4. Set remote description from HeyGen offer
+      // 4) SDP handshake (browser side)
       await pc.setRemoteDescription(new RTCSessionDescription(offer.sdp));
-
-      // 5. Create & set local answer
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      // 6. Send answer back to HeyGen
-      await fetch(`${BACKEND_BASE}/heygen/proxy/streaming.answer`, {
+      // NOTE: There is no /streaming.answer endpoint. Start the session via streaming.start.
+      const startRes = await fetch(`${BACKEND_BASE}/heygen/proxy/streaming.start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: offer.session_id,
-          sdp: pc.localDescription,
-        }),
+        body: JSON.stringify({ session_id: currentSessionId }),
       });
 
-      console.log("✅ Sent WebRTC answer to HeyGen");
+      if (!startRes.ok) {
+        const t = await startRes.text().catch(() => "");
+        throw new Error(`streaming.start failed: ${startRes.status} ${t}`);
+      }
+
+      console.log("✅ streaming.start OK");
+      if (videoEl) videoEl.muted = false;
       setButtons({ starting: false, ready: true });
     }
 
@@ -160,9 +165,12 @@ startBtn?.addEventListener("click", async () => {
 endBtn?.addEventListener("click", async () => {
   try {
     setButtons({ starting: false, ready: false });
+
+    // Legacy
     await avatar?.stop();
     avatar = null;
 
+    // WebRTC
     if (pc) {
       pc.close();
       pc = null;
@@ -189,19 +197,22 @@ speakBtn?.addEventListener("click", async () => {
     if (avatar) {
       // Legacy token flow
       await avatar.speak({ taskType: TaskType.TALK, text });
-    } else if (pc && currentSessionId) {
-      // WebRTC flow: POST speak task directly
-      await fetch(`${BACKEND_BASE}/heygen/proxy/streaming.task`, {
+    } else if (currentSessionId) {
+      // WebRTC flow — correct payload for streaming.task
+      const r = await fetch(`${BACKEND_BASE}/heygen/proxy/streaming.task`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           session_id: currentSessionId,
-          task: {
-            type: "talk",
-            text,
-          },
+          text,                 // required
+          task_type: "repeat",  // or "chat" if you configured a KB in streaming.new
+          // task_mode: "sync",  // optional
         }),
       });
+      if (!r.ok) {
+        const t = await r.text().catch(() => "");
+        throw new Error(`streaming.task failed: ${r.status} ${t}`);
+      }
     }
 
     if (inputEl) inputEl.value = "";
@@ -210,8 +221,10 @@ speakBtn?.addEventListener("click", async () => {
   }
 });
 
+// Enter to speak
 inputEl?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") speakBtn?.click();
 });
 
+// Initial UI state
 setButtons({ starting: false, ready: false });
