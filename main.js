@@ -58,14 +58,18 @@ startBtn?.addEventListener("click", async () => {
     // 3. Now join LiveKit room
     lkRoom = new Room();
     lkRoom.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
-      const ms = new MediaStream();
-      participant.tracks.forEach((p) => {
-        if (p.track && p.track.mediaStreamTrack) {
-          ms.addTrack(p.track.mediaStreamTrack);
-        }
-      });
-      if (videoEl) videoEl.srcObject = ms;
-    });
+  const ms = new MediaStream();
+
+  // LiveKit participant.tracks is a Map → iterate its values
+  participant.tracks.forEach(pub => {
+    const t = pub.track;
+    if (t && t.mediaStreamTrack) {
+      ms.addTrack(t.mediaStreamTrack);
+    }
+  });
+
+  if (videoEl) videoEl.srcObject = ms;
+});
 
     await lkRoom.connect(session.url, session.access_token);
     console.log("✅ Connected to LiveKit");
