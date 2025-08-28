@@ -13,16 +13,22 @@
   </style>
 </head>
 <body>
- <h1>BCM Streaming Avatar</h1>
-<video id="avatarVideo" autoplay playsinline muted></video>
-<div class="row">
-  <button id="startSession">Start</button>
-  <button id="endSession" disabled>End</button>
-</div>
+  <h1>BCM Streaming Avatar</h1>
+
+  <!-- Avatar video -->
+  <video id="avatarVideo" autoplay playsinline muted></video>
+
+  <!-- Controls -->
+  <div class="row">
+    <button id="startSession">Start</button>
+    <button id="endSession" disabled>End</button>
+  </div>
   <div class="row">
     <input id="userInput" type="text" placeholder="Type something for the avatar to say…" />
     <button id="speakButton">Speak</button>
   </div>
+
+  <!-- Main logic -->
   <script type="module" src="/main.js"></script>
 </body>
 </html>
