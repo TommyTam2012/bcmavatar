@@ -1,24 +1,12 @@
 // ===============================
-// main.js (HeyGen Interactive style, fixed order)
+// main.js (final patch)
 // ===============================
-
-import {
-  AvatarQuality,
-  StreamingEvents,
-  VoiceEmotion,
-  StartAvatarRequest,
-  ElevenLabsModel,
-} from "@heygen/streaming-avatar";
 
 import { Room, RoomEvent } from "livekit-client";
 
 // ---- CONFIG ----
 const BACKEND_BASE =
   (import.meta.env?.VITE_BACKEND_BASE || "https://bcm-demo.onrender.com").replace(/\/$/, "");
-
-// Use a valid Interactive Avatar ID from your HeyGen account
-const AVATAR_ID =
-  import.meta.env?.VITE_AVATAR_ID || "0d3f35185d7c4360b9f03312e0264d59";
 
 // ---- DOM ----
 const videoEl = document.getElementById("avatarVideo");
