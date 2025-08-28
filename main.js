@@ -24,7 +24,7 @@
   };
 })();
 
-// --- SDK import AFTER shim is installed ---
+// --- SDK import (still used for token flow) ---
 import StreamingAvatar, {
   StreamingEvents,
   TaskType,
@@ -46,6 +46,8 @@ const inputEl  = document.getElementById("userInput");
 
 // ---- STATE ----
 let avatar = null;
+let pc = null;             // WebRTC PeerConnection (for new flow)
+let currentSessionId = ""; // track session_id for speak requests
 
 // ---- HELPERS ----
 async function getSessionOffer() {
@@ -59,12 +61,9 @@ async function getSessionOffer() {
   }
   const data = await res.json();
 
-  // Legacy shape (old SDK)
   if (data?.session_token || data?.token) {
     return { type: "token", token: data.session_token || data.token };
   }
-
-  // New shape (WebRTC offer)
   if (data?.data?.session_id && data?.data?.sdp) {
     return {
       type: "webrtc",
@@ -72,7 +71,6 @@ async function getSessionOffer() {
       sdp: data.data.sdp,
     };
   }
-
   throw new Error("Unexpected HeyGen response: " + JSON.stringify(data));
 }
 
@@ -86,11 +84,10 @@ function setButtons({ starting = false, ready = false }) {
 startBtn?.addEventListener("click", async () => {
   try {
     setButtons({ starting: true, ready: false });
-
     const offer = await getSessionOffer();
 
     if (offer.type === "token") {
-      // --- Legacy flow ---
+      // --- Legacy flow (session_token) ---
       avatar = new StreamingAvatar({
         token: offer.token,
         avatarId: AVATAR_ID,
@@ -117,12 +114,40 @@ startBtn?.addEventListener("click", async () => {
     } else if (offer.type === "webrtc") {
       // --- New WebRTC flow ---
       console.log("✅ Got WebRTC offer from backend:", offer);
+      currentSessionId = offer.session_id;
 
-      // For now: just log it, since the StreamingAvatar SDK
-      // may require a different init call for WebRTC negotiation.
-      // Next step: call SDK's connect/answer method with offer.sdp.
-      alert("WebRTC offer received (session_id). Need SDK handshake logic.");
-      setButtons({ starting: false, ready: false });
+      // 1. Create PeerConnection
+      pc = new RTCPeerConnection();
+
+      // 2. Remote track (video/audio from HeyGen)
+      pc.ontrack = (event) => {
+        console.log("🎥 Remote track received:", event.streams);
+        if (videoEl) videoEl.srcObject = event.streams[0];
+      };
+
+      // 3. Local mic (optional: capture mic input)
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+      // 4. Set remote description from HeyGen offer
+      await pc.setRemoteDescription(new RTCSessionDescription(offer.sdp));
+
+      // 5. Create & set local answer
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      // 6. Send answer back to HeyGen
+      await fetch(`${BACKEND_BASE}/heygen/proxy/streaming.answer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: offer.session_id,
+          sdp: pc.localDescription,
+        }),
+      });
+
+      console.log("✅ Sent WebRTC answer to HeyGen");
+      setButtons({ starting: false, ready: true });
     }
 
   } catch (err) {
@@ -137,6 +162,13 @@ endBtn?.addEventListener("click", async () => {
     setButtons({ starting: false, ready: false });
     await avatar?.stop();
     avatar = null;
+
+    if (pc) {
+      pc.close();
+      pc = null;
+      currentSessionId = "";
+    }
+
     if (videoEl) {
       videoEl.srcObject = null;
       videoEl.removeAttribute("src");
@@ -153,7 +185,25 @@ speakBtn?.addEventListener("click", async () => {
   try {
     const text = (inputEl?.value || "Hi, I’m Alessandra. How can I help?").trim();
     if (!text) return;
-    await avatar?.speak({ taskType: TaskType.TALK, text });
+
+    if (avatar) {
+      // Legacy token flow
+      await avatar.speak({ taskType: TaskType.TALK, text });
+    } else if (pc && currentSessionId) {
+      // WebRTC flow: POST speak task directly
+      await fetch(`${BACKEND_BASE}/heygen/proxy/streaming.task`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: currentSessionId,
+          task: {
+            type: "talk",
+            text,
+          },
+        }),
+      });
+    }
+
     if (inputEl) inputEl.value = "";
   } catch (err) {
     console.error("Speak failed:", err);
