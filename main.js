@@ -27,7 +27,11 @@
 })();
 
 // --- SDK import AFTER shim is installed ---
-import StreamingAvatar, { StreamingEvents, TaskType } from "@heygen/streaming-avatar";
+import StreamingAvatar, {
+  StreamingEvents,
+  TaskType,
+  AvatarQuality,
+} from "@heygen/streaming-avatar";
 
 // ---- CONFIG ----
 const BACKEND_BASE =
@@ -35,8 +39,7 @@ const BACKEND_BASE =
 
 // ✅ Alessandra (Professional Look) avatar_id (from Labs Network response)
 // You can override via env: VITE_AVATAR_ID
-const AVATAR_ID =
-  import.meta.env?.VITE_AVATAR_ID || "0d3f35185d7c4360b9f03312e0264d59";
+const AVATAR_ID = import.meta.env?.VITE_AVATAR_ID || "0d3f35185d7c4360b9f03312e0264d59";
 
 // ---- DOM ----
 const videoEl  = document.getElementById("avatarVideo");
@@ -77,16 +80,17 @@ startBtn?.addEventListener("click", async () => {
 
     const token = await getSessionToken();
 
+    // Create SDK instance
     avatar = new StreamingAvatar({
       token,
-      avatarId: AVATAR_ID,
+      avatarId: AVATAR_ID,     // keep id here (some SDK versions read it)
       videoElement: videoEl,
     });
 
-    avatar.on(StreamingEvents.READY, () => {
-      console.log("✅ Avatar READY");
-      // Allow audio after explicit user action
-      if (videoEl) videoEl.muted = false;
+    // Listen for stream readiness
+    avatar.on(StreamingEvents.STREAM_READY, () => {
+      console.log("✅ Avatar STREAM_READY");
+      if (videoEl) videoEl.muted = false; // allow audio after user action
       setButtons({ starting: false, ready: true });
     });
 
@@ -96,7 +100,14 @@ startBtn?.addEventListener("click", async () => {
       setButtons({ starting: false, ready: false });
     });
 
-    await avatar.start(); // Connects & renders
+    // Create + start streaming session (no avatar.start())
+    await avatar.createStartAvatar({
+      avatarName: AVATAR_ID,          // pass the same ID here
+      quality: AvatarQuality.High,    // or Medium/Low
+      // language: "en",
+      // voice: { rate: 1.0 },
+    });
+
   } catch (err) {
     console.error("Failed to start session:", err);
     alert("Start failed. Open DevTools → Console for details.");
