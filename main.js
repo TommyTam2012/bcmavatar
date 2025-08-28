@@ -1,5 +1,5 @@
 // ===============================
-// main.js (HeyGen Interactive style)
+// main.js (HeyGen Interactive style, fixed order)
 // ===============================
 
 import {
@@ -58,7 +58,16 @@ startBtn?.addEventListener("click", async () => {
     const session = await fetchSession();
     currentSessionId = session.session_id;
 
-    // 2. Join LiveKit room
+    // 2. Start the avatar session FIRST
+    const startRes = await fetch(`${BACKEND_BASE}/heygen/proxy/streaming.start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: currentSessionId }),
+    });
+    if (!startRes.ok) throw new Error(await startRes.text());
+    console.log("✅ streaming.start OK");
+
+    // 3. Now join LiveKit room
     lkRoom = new Room();
     lkRoom.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
       const ms = new MediaStream();
@@ -73,15 +82,6 @@ startBtn?.addEventListener("click", async () => {
     await lkRoom.connect(session.url, session.access_token);
     console.log("✅ Connected to LiveKit");
 
-    // 3. Start the avatar session
-    const startRes = await fetch(`${BACKEND_BASE}/heygen/proxy/streaming.start`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: currentSessionId }),
-    });
-    if (!startRes.ok) throw new Error(await startRes.text());
-
-    console.log("✅ streaming.start OK");
     if (videoEl) videoEl.muted = false;
     setButtons({ starting: false, ready: true });
   } catch (err) {
