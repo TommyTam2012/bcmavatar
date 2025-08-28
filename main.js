@@ -1,8 +1,8 @@
 // ===============================
-// main.js (final patch)
+// main.js (final, LiveKit v2 flow)
 // ===============================
 
-import { Room, RoomEvent } from "livekit-client";
+import { Room, RoomEvent, ConnectionState } from "livekit-client";
 
 // ---- CONFIG ----
 const BACKEND_BASE =
@@ -24,7 +24,6 @@ async function fetchSession() {
   const res = await fetch(`${BACKEND_BASE}/heygen/token`, { method: "POST" });
   if (!res.ok) throw new Error(await res.text());
   const body = await res.json();
-
   if (body?.data?.session_id && body?.data?.url && body?.data?.access_token) {
     return body.data;
   }
@@ -42,11 +41,11 @@ startBtn?.addEventListener("click", async () => {
   try {
     setButtons({ starting: true, ready: false });
 
-    // 1. Create session via backend
+    // 1) Create session
     const session = await fetchSession();
     currentSessionId = session.session_id;
 
-    // 2. Start the avatar session FIRST
+    // 2) Start avatar session first
     const startRes = await fetch(`${BACKEND_BASE}/heygen/proxy/streaming.start`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -55,21 +54,36 @@ startBtn?.addEventListener("click", async () => {
     if (!startRes.ok) throw new Error(await startRes.text());
     console.log("✅ streaming.start OK");
 
-    // 3. Now join LiveKit room
+    // 3) Join LiveKit room
     lkRoom = new Room();
-    lkRoom.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
-  const ms = new MediaStream();
 
-  // LiveKit participant.tracks is a Map → iterate its values
-  participant.tracks.forEach(pub => {
-    const t = pub.track;
-    if (t && t.mediaStreamTrack) {
-      ms.addTrack(t.mediaStreamTrack);
-    }
-  });
+    // Connection state logs (optional)
+    lkRoom.on(RoomEvent.ConnectionStateChanged, (state) => {
+      console.log("LiveKit state:", state);
+    });
 
-  if (videoEl) videoEl.srcObject = ms;
-});
+    // SAFEST: use the track argument itself (no map iteration)
+    lkRoom.on(RoomEvent.TrackSubscribed, (track /*, publication, participant */) => {
+      try {
+        if (track && track.mediaStreamTrack) {
+          const ms = new MediaStream([track.mediaStreamTrack]);
+          if (videoEl) {
+            videoEl.srcObject = ms;
+          }
+        }
+      } catch (e) {
+        console.error("TrackSubscribed handler error:", e);
+      }
+    });
+
+    // Optional: clean up when a track is removed
+    lkRoom.on(RoomEvent.TrackUnsubscribed, () => {
+      try {
+        if (videoEl) {
+          videoEl.srcObject = null;
+        }
+      } catch {}
+    });
 
     await lkRoom.connect(session.url, session.access_token);
     console.log("✅ Connected to LiveKit");
@@ -107,7 +121,7 @@ endBtn?.addEventListener("click", async () => {
 
 speakBtn?.addEventListener("click", async () => {
   try {
-    const text = (inputEl?.value || "Hello, I’m Alessandra.").trim();
+    const text = (inputEl?.value || "Hello, Captain.").trim();
     if (!text || !currentSessionId) return;
 
     const r = await fetch(`${BACKEND_BASE}/heygen/proxy/streaming.task`, {
