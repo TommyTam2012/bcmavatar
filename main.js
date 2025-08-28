@@ -1,4 +1,8 @@
-// --- Fetch shim: intercept HeyGen API calls BEFORE the SDK loads ---
+Please confirm the main.js code capt.  // ===============================
+// main.js
+// ===============================
+
+// --- Fetch shim: intercept HeyGen API calls BEFORE SDK loads ---
 // We do NOT send any admin key from the browser.
 // All SDK calls to https://api.heygen.com/v1/* are routed to our backend proxy.
 const ORIG_FETCH = window.fetch;
@@ -11,7 +15,7 @@ window.fetch = async (input, init = {}) => {
       const base = (import.meta?.env?.VITE_BACKEND_BASE || "https://bcm-demo.onrender.com")
         .replace(/\/$/, "");
       input = `${base}/heygen/proxy/${subpath}`;
-      // No headers added here; backend proxy will attach Authorization with HEYGEN_API_KEY
+      // Backend proxy will inject HEYGEN_API_KEY
     }
   } catch (err) {
     console.warn("[Shim] fetch override error:", err);
@@ -20,116 +24,82 @@ window.fetch = async (input, init = {}) => {
 };
 
 // --- Main app: load SDK only AFTER shim is installed ---
-(async () => {
-  const {
-    default: StreamingAvatar,
-    AvatarQuality,
-    StreamingEvents,
-    TaskType,
-  } = await import("@heygen/streaming-avatar");
+import StreamingAvatar, { StreamingEvents, TaskType } from "@heygen/streaming-avatar";
 
-  // ---- CONFIG ----
-  const BACKEND_BASE =
-    (import.meta?.env?.VITE_BACKEND_BASE || "https://bcm-demo.onrender.com").replace(/\/$/, "");
-  const AVATAR_ID = "c5e81098eb3e46189740b6156b3ac85a";
+// ---- CONFIG ----
+const BACKEND_BASE =
+  (import.meta.env?.VITE_BACKEND_BASE || "https://bcm-demo.onrender.com").replace(/\/$/, "");
 
-  // ---- DOM ----
-  const videoEl  = document.getElementById("avatarVideo");
-  const startBtn = document.getElementById("startSession");
-  const endBtn   = document.getElementById("endSession");
-  const speakBtn = document.getElementById("speakButton");
-  const inputEl  = document.getElementById("userInput");
+// ✅ Alessandra (Professional Look) avatar ID
+const AVATAR_ID = "0d3f35185d7c4360b9f03312e0264d59";
 
-  // ---- STATE ----
-  let avatar = null;
+// ---- DOM ----
+const videoEl   = document.getElementById("avatarVideo");
+const startBtn  = document.getElementById("startSession");
+const endBtn    = document.getElementById("endSession");
+const speakBtn  = document.getElementById("speakButton");
+const inputEl   = document.getElementById("userInput");
 
-  // ---- HELPERS ----
-  async function fetchSessionToken() {
-    const res = await fetch(`${BACKEND_BASE}/heygen/token`, {
-      method: "POST",
-      cache: "no-store",
-    });
+// ---- STATE ----
+let avatar = null;
 
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Token fetch failed: ${res.status} ${res.statusText} | ${text}`);
-    }
+// ---- HELPERS ----
+async function getSessionToken() {
+  const res = await fetch(`${BACKEND_BASE}/heygen/token`, { method: "POST", cache: "no-store" });
+  if (!res.ok) throw new Error(`Token fetch failed: ${res.status}`);
+  const { session_token } = await res.json();
+  if (!session_token) throw new Error("No session_token in backend response");
+  return session_token;
+}
 
-    const data = await res.json();
-    const token = data?.session_token;
-    if (!token) throw new Error("No session_token in backend response");
-    return token;
-  }
-
-  function attachVideoHandlers(instance) {
-    instance.on(StreamingEvents.STREAM_READY, (ev) => {
-      const stream = ev.detail;
-      if (stream && videoEl) {
-        videoEl.srcObject = stream;
-        videoEl.onloadedmetadata = () => videoEl.play().catch(console.error);
-      }
-    });
-
-    instance.on(StreamingEvents.STREAM_DISCONNECTED, () => {
-      if (videoEl) videoEl.srcObject = null;
-      startBtn.disabled = false;
-      endBtn.disabled = true;
-    });
-  }
-
-  // ---- LIFECYCLE ----
-  async function startSession() {
+// ---- LIFECYCLE ----
+startBtn?.addEventListener("click", async () => {
+  try {
     startBtn.disabled = true;
-    try {
-      const token = await fetchSessionToken();
-      console.log("[INFO] Got session_token:", token);
 
-      avatar = new StreamingAvatar({ token });
-      attachVideoHandlers(avatar);
+    const token = await getSessionToken();
 
-      await avatar.createStartAvatar({
-        quality: AvatarQuality.High,
-        avatarId: AVATAR_ID,
-      });
+    avatar = new StreamingAvatar({
+      token,
+      avatarId: AVATAR_ID,
+      videoElement: videoEl,
+    });
 
-      // User clicked Start (gesture) → safe to unmute so we can hear speech
-      if (videoEl) videoEl.muted = false;
-
+    avatar.on(StreamingEvents.READY, () => {
+      console.log("✅ Avatar READY");
       endBtn.disabled = false;
-    } catch (err) {
-      console.error("Failed to start session:", err);
-      startBtn.disabled = false;
-      alert("Start failed. Check console for details.");
-    }
-  }
+      speakBtn.disabled = false;
+      if (videoEl) videoEl.muted = false; // allow audio once user clicked Start
+    });
 
-  async function endSession() {
-    if (!avatar) return;
-    try {
-      await avatar.stopAvatar();
-    } finally {
-      if (videoEl) videoEl.srcObject = null;
-      avatar = null;
-      startBtn.disabled = false;
-      endBtn.disabled = true;
-    }
+    await avatar.start();
+  } catch (err) {
+    console.error("Failed to start session:", err);
+    startBtn.disabled = false;
+    alert("Start failed. Check console for details.");
   }
+});
 
-  async function speak() {
-    if (!avatar) return;
-    const text = inputEl.value.trim();
+endBtn?.addEventListener("click", async () => {
+  try {
+    endBtn.disabled = true;
+    speakBtn.disabled = true;
+    await avatar?.stop();
+    avatar = null;
+    startBtn.disabled = false;
+    if (videoEl) videoEl.srcObject = null;
+  } catch (err) {
+    console.error("End failed:", err);
+  }
+});
+
+speakBtn?.addEventListener("click", async () => {
+  try {
+    const text = (inputEl?.value || "Hi, I’m Alessandra.").trim();
     if (!text) return;
-    try {
-      // TALK = generate speech + lipsync (REPEAT only loops motions)
-      await avatar.speak({ text, taskType: TaskType.TALK });
-      inputEl.value = "";
-    } catch (err) {
-      console.error("Speak failed:", err);
-    }
+    await avatar?.speak({ taskType: TaskType.TALK, text });
+    inputEl.value = "";
+  } catch (err) {
+    console.error("Speak failed:", err);
   }
-
-  // ---- WIRE UP ----
-  startBtn?.addEventListener("click", startSession);
-  endBtn?.addEventListener("click", endSession);
-  speakBtn?.addEventListener("click", speak);
-})();
+});
