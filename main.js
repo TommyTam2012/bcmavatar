@@ -3,8 +3,6 @@
 // ===============================
 
 // --- Optional fetch shim (routes SDK calls to your backend proxy) ---
-// Leave ON if your backend implements /heygen/proxy/*
-// Turn OFF by setting VITE_DISABLE_HEYGEN_SHIM="1"
 (() => {
   const DISABLE_SHIM = (import.meta?.env?.VITE_DISABLE_HEYGEN_SHIM || "") === "1";
   if (DISABLE_SHIM) return;
@@ -17,7 +15,7 @@
         const subpath = url.slice("https://api.heygen.com/v1/".length);
         const base = (import.meta?.env?.VITE_BACKEND_BASE || "https://bcm-demo.onrender.com")
           .replace(/\/$/, "");
-        input = `${base}/heygen/proxy/${subpath}`; // backend injects HEYGEN_API_KEY
+        input = `${base}/heygen/proxy/${subpath}`;
       }
     } catch (err) {
       console.warn("[Shim] fetch override error:", err);
@@ -37,8 +35,6 @@ import StreamingAvatar, {
 const BACKEND_BASE =
   (import.meta.env?.VITE_BACKEND_BASE || "https://bcm-demo.onrender.com").replace(/\/$/, "");
 
-// ✅ Alessandra (Professional Look) avatar_id (from Labs Network response)
-// You can override via env: VITE_AVATAR_ID
 const AVATAR_ID = import.meta.env?.VITE_AVATAR_ID || "0d3f35185d7c4360b9f03312e0264d59";
 
 // ---- DOM ----
@@ -52,7 +48,7 @@ const inputEl  = document.getElementById("userInput");
 let avatar = null;
 
 // ---- HELPERS ----
-async function getSessionToken() {
+async function getSessionOffer() {
   const res = await fetch(`${BACKEND_BASE}/heygen/token`, {
     method: "POST",
     cache: "no-store",
@@ -62,9 +58,22 @@ async function getSessionToken() {
     throw new Error(`Token fetch failed: ${res.status} ${text}`);
   }
   const data = await res.json();
-  const token = data?.session_token || data?.token;
-  if (!token) throw new Error("No session_token in backend response");
-  return token;
+
+  // Legacy shape (old SDK)
+  if (data?.session_token || data?.token) {
+    return { type: "token", token: data.session_token || data.token };
+  }
+
+  // New shape (WebRTC offer)
+  if (data?.data?.session_id && data?.data?.sdp) {
+    return {
+      type: "webrtc",
+      session_id: data.data.session_id,
+      sdp: data.data.sdp,
+    };
+  }
+
+  throw new Error("Unexpected HeyGen response: " + JSON.stringify(data));
 }
 
 function setButtons({ starting = false, ready = false }) {
@@ -78,35 +87,43 @@ startBtn?.addEventListener("click", async () => {
   try {
     setButtons({ starting: true, ready: false });
 
-    const token = await getSessionToken();
+    const offer = await getSessionOffer();
 
-    // Create SDK instance
-    avatar = new StreamingAvatar({
-      token,
-      avatarId: AVATAR_ID,     // keep id here (some SDK versions read it)
-      videoElement: videoEl,
-    });
+    if (offer.type === "token") {
+      // --- Legacy flow ---
+      avatar = new StreamingAvatar({
+        token: offer.token,
+        avatarId: AVATAR_ID,
+        videoElement: videoEl,
+      });
 
-    // Listen for stream readiness
-    avatar.on(StreamingEvents.STREAM_READY, () => {
-      console.log("✅ Avatar STREAM_READY");
-      if (videoEl) videoEl.muted = false; // allow audio after user action
-      setButtons({ starting: false, ready: true });
-    });
+      avatar.on(StreamingEvents.STREAM_READY, () => {
+        console.log("✅ Avatar STREAM_READY (legacy)");
+        if (videoEl) videoEl.muted = false;
+        setButtons({ starting: false, ready: true });
+      });
 
-    avatar.on(StreamingEvents.ERROR, (e) => {
-      console.error("Streaming ERROR:", e);
-      alert("Avatar error. Check console for details.");
+      avatar.on(StreamingEvents.ERROR, (e) => {
+        console.error("Streaming ERROR:", e);
+        alert("Avatar error. Check console for details.");
+        setButtons({ starting: false, ready: false });
+      });
+
+      await avatar.createStartAvatar({
+        avatarName: AVATAR_ID,
+        quality: AvatarQuality.High,
+      });
+
+    } else if (offer.type === "webrtc") {
+      // --- New WebRTC flow ---
+      console.log("✅ Got WebRTC offer from backend:", offer);
+
+      // For now: just log it, since the StreamingAvatar SDK
+      // may require a different init call for WebRTC negotiation.
+      // Next step: call SDK's connect/answer method with offer.sdp.
+      alert("WebRTC offer received (session_id). Need SDK handshake logic.");
       setButtons({ starting: false, ready: false });
-    });
-
-    // Create + start streaming session (no avatar.start())
-    await avatar.createStartAvatar({
-      avatarName: AVATAR_ID,          // pass the same ID here
-      quality: AvatarQuality.High,    // or Medium/Low
-      // language: "en",
-      // voice: { rate: 1.0 },
-    });
+    }
 
   } catch (err) {
     console.error("Failed to start session:", err);
@@ -143,10 +160,8 @@ speakBtn?.addEventListener("click", async () => {
   }
 });
 
-// ---- Optional: auto-wire Enter key on input ----
 inputEl?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") speakBtn?.click();
 });
 
-// ---- Initial UI state ----
 setButtons({ starting: false, ready: false });
