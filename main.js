@@ -1,25 +1,22 @@
 // ===============================
-// main.js (final, LiveKit v2 flow)
+// main.js (final patched: audio + TALK + mic STT)
 // ===============================
 
-import { Room, RoomEvent, ConnectionState } from "livekit-client";
+import { Room, RoomEvent } from "livekit-client";
 
-// ---- CONFIG ----
 const BACKEND_BASE =
   (import.meta.env?.VITE_BACKEND_BASE || "https://bcm-demo.onrender.com").replace(/\/$/, "");
 
-// ---- DOM ----
 const videoEl = document.getElementById("avatarVideo");
 const startBtn = document.getElementById("startSession");
 const endBtn = document.getElementById("endSession");
 const speakBtn = document.getElementById("speakButton");
-const inputEl = document.getElementById("userInput");
+const micBtn   = document.getElementById("micButton");
+const inputEl  = document.getElementById("userInput");
 
-// ---- STATE ----
 let lkRoom = null;
 let currentSessionId = "";
 
-// ---- HELPERS ----
 async function fetchSession() {
   const res = await fetch(`${BACKEND_BASE}/heygen/token`, { method: "POST" });
   if (!res.ok) throw new Error(await res.text());
@@ -34,57 +31,41 @@ function setButtons({ starting = false, ready = false }) {
   if (startBtn) startBtn.disabled = starting || ready;
   if (endBtn) endBtn.disabled = !ready;
   if (speakBtn) speakBtn.disabled = !ready;
+  if (micBtn) micBtn.disabled = !ready;
 }
 
 // ---- LIFECYCLE ----
 startBtn?.addEventListener("click", async () => {
   try {
     setButtons({ starting: true, ready: false });
-
-    // 1) Create session
     const session = await fetchSession();
     currentSessionId = session.session_id;
 
-    // 2) Start avatar session first
-    const startRes = await fetch(`${BACKEND_BASE}/heygen/proxy/streaming.start`, {
+    await fetch(`${BACKEND_BASE}/heygen/proxy/streaming.start`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ session_id: currentSessionId }),
     });
-    if (!startRes.ok) throw new Error(await startRes.text());
     console.log("✅ streaming.start OK");
 
-    // 3) Join LiveKit room
     lkRoom = new Room();
-
-    // Connection state logs (optional)
     lkRoom.on(RoomEvent.ConnectionStateChanged, (state) => {
       console.log("LiveKit state:", state);
     });
 
-    // SAFEST: use the track argument itself (no map iteration)
     lkRoom.on(RoomEvent.TrackSubscribed, (track) => {
-      try {
-        if (track && track.mediaStreamTrack) {
-          const ms = new MediaStream([track.mediaStreamTrack]);
-          if (videoEl) {
-            videoEl.srcObject = ms;
-            videoEl.muted = false;
-            videoEl.play().catch(err => console.warn("Autoplay blocked:", err));
-          }
-        }
-      } catch (e) {
-        console.error("TrackSubscribed handler error:", e);
+      if (track.kind === "video" && track.mediaStreamTrack) {
+        videoEl.srcObject = new MediaStream([track.mediaStreamTrack]);
+        videoEl.muted = false;
+        videoEl.play().catch(err => console.warn("Video autoplay blocked:", err));
       }
-    });
-
-    // Optional: clean up when a track is removed
-    lkRoom.on(RoomEvent.TrackUnsubscribed, () => {
-      try {
-        if (videoEl) {
-          videoEl.srcObject = null;
-        }
-      } catch {}
+      if (track.kind === "audio" && track.mediaStreamTrack) {
+        const audioEl = document.createElement("audio");
+        audioEl.srcObject = new MediaStream([track.mediaStreamTrack]);
+        audioEl.autoplay = true;
+        audioEl.play().catch(err => console.warn("Audio autoplay blocked:", err));
+        console.log("✅ Audio track attached");
+      }
     });
 
     await lkRoom.connect(session.url, session.access_token);
@@ -101,18 +82,12 @@ startBtn?.addEventListener("click", async () => {
 endBtn?.addEventListener("click", async () => {
   try {
     setButtons({ starting: false, ready: false });
-
     if (lkRoom) {
       await lkRoom.disconnect();
       lkRoom = null;
     }
     currentSessionId = "";
-
-    if (videoEl) {
-      videoEl.srcObject = null;
-      videoEl.removeAttribute("src");
-      videoEl.load();
-    }
+    videoEl.srcObject = null;
   } catch (err) {
     console.error("End failed:", err);
   } finally {
@@ -122,24 +97,57 @@ endBtn?.addEventListener("click", async () => {
 
 speakBtn?.addEventListener("click", async () => {
   try {
-    const text = (inputEl?.value || "Hello, Captain.").trim();
+    const text = (inputEl?.value || "").trim();
     if (!text || !currentSessionId) return;
-
-    const r = await fetch(`${BACKEND_BASE}/heygen/proxy/streaming.task`, {
+    await fetch(`${BACKEND_BASE}/heygen/proxy/streaming.task`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         session_id: currentSessionId,
         text,
-        task_type: "talk", // TALK ensures lip-sync + voice
+        task_type: "talk",
       }),
     });
-    if (!r.ok) throw new Error(await r.text());
-
-    if (inputEl) inputEl.value = "";
+    inputEl.value = "";
   } catch (err) {
     console.error("Speak failed:", err);
   }
+});
+
+// ---- Mic / STT ----
+micBtn?.addEventListener("click", async () => {
+  if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
+    alert("Speech Recognition not supported in this browser.");
+    return;
+  }
+
+  const Recog = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = new Recog();
+  rec.lang = "en-US";
+  rec.start();
+
+  rec.onresult = async (event) => {
+    const transcript = event.results[0][0].transcript;
+    console.log("🎤 Heard:", transcript);
+    inputEl.value = transcript;
+
+    // auto-send to avatar
+    if (currentSessionId) {
+      await fetch(`${BACKEND_BASE}/heygen/proxy/streaming.task`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: currentSessionId,
+          text: transcript,
+          task_type: "talk",
+        }),
+      });
+    }
+  };
+
+  rec.onerror = (event) => {
+    console.error("STT error:", event.error);
+  };
 });
 
 // Enter key triggers speak
