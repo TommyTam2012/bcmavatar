@@ -63,12 +63,14 @@ startBtn?.addEventListener("click", async () => {
     });
 
     // SAFEST: use the track argument itself (no map iteration)
-    lkRoom.on(RoomEvent.TrackSubscribed, (track /*, publication, participant */) => {
+    lkRoom.on(RoomEvent.TrackSubscribed, (track) => {
       try {
         if (track && track.mediaStreamTrack) {
           const ms = new MediaStream([track.mediaStreamTrack]);
           if (videoEl) {
             videoEl.srcObject = ms;
+            videoEl.muted = false;
+            videoEl.play().catch(err => console.warn("Autoplay blocked:", err));
           }
         }
       } catch (e) {
@@ -88,7 +90,6 @@ startBtn?.addEventListener("click", async () => {
     await lkRoom.connect(session.url, session.access_token);
     console.log("✅ Connected to LiveKit");
 
-    if (videoEl) videoEl.muted = false;
     setButtons({ starting: false, ready: true });
   } catch (err) {
     console.error("Failed to start session:", err);
@@ -130,7 +131,7 @@ speakBtn?.addEventListener("click", async () => {
       body: JSON.stringify({
         session_id: currentSessionId,
         text,
-        task_type: "repeat", // or "chat"
+        task_type: "talk", // TALK ensures lip-sync + voice
       }),
     });
     if (!r.ok) throw new Error(await r.text());
