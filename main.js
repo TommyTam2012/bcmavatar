@@ -1,5 +1,6 @@
 // ===============================
-// main.js (LiveKit + TALK + BCM-only answers + Mic + Pause/Resume)
+// main.js (LiveKit + BCM-only answers + Mic + Pause/Resume)
+// Agent loop blocked: repeat mode + interrupt on connect
 // ===============================
 
 import { Room, RoomEvent } from "livekit-client";
@@ -40,13 +41,14 @@ function setButtons({ starting = false, ready = false }) {
   if (endBtn)    endBtn.disabled    = !ready;
   if (speakBtn)  speakBtn.disabled  = !ready;
   if (micBtn)    micBtn.disabled    = !ready;
-  // pause/resume will be enabled when audio track attaches
+  // pause/resume enabled when audio attaches
 }
 
+// Force exact TTS output (no agent): use task_type "repeat"
 async function say(text) {
   if (!currentSessionId) return;
-  const payload = { session_id: currentSessionId, text: (text || "").trim(), task_type: "talk" };
-  if (!payload.text) return; // never send empty -> prevents model from asking questions
+  const payload = { session_id: currentSessionId, text: (text || "").trim(), task_type: "repeat" };
+  if (!payload.text) return; // never send empty -> prevents agent-style backtalk
   await fetch(`${BACKEND_BASE}/heygen/proxy/streaming.task`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -54,17 +56,27 @@ async function say(text) {
   });
 }
 
-async function interruptSpeaking() {
+// Hard interrupt any auto-speech/loop right after connect
+async function hardInterrupt() {
   if (!currentSessionId) return;
   try {
-    // Some providers ignore this; we still mute locally as a guarantee.
-    await fetch(`${BACKEND_BASE}/heygen/proxy/streaming.task`, {
+    await fetch(`${BACKEND_BASE}/heygen/proxy/streaming.interrupt`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: currentSessionId, text: ".", task_type: "talk" }),
+      body: JSON.stringify({ session_id: currentSessionId }),
     });
   } catch (e) {
-    console.warn("interrupt attempt failed:", e);
+    // Fallback: send a zero-length repeat to “nudge” the pipeline quiet
+    console.warn("interrupt endpoint failed; sending quiet repeat fallback", e);
+    try {
+      await fetch(`${BACKEND_BASE}/heygen/proxy/streaming.task`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: currentSessionId, text: " ", task_type: "repeat" }),
+      });
+    } catch (e2) {
+      console.warn("fallback interrupt failed", e2);
+    }
   }
 }
 
@@ -75,8 +87,7 @@ function initSpeechRecognition() {
     return null;
   }
   const rec = new SR();
-  // Change language if you prefer (e.g., "zh-CN" for Mandarin, "yue-Hant-HK" for Cantonese)
-  rec.lang = "en-US";
+  rec.lang = "en-US"; // change to "zh-CN" / "yue-Hant-HK" if desired
   rec.interimResults = true;
   rec.continuous = true;
 
@@ -90,22 +101,14 @@ function initSpeechRecognition() {
     let interim = "";
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const t = event.results[i][0].transcript;
-      if (event.results[i].isFinal) {
-        finalTranscript += t;
-      } else {
-        interim += t;
-      }
+      if (event.results[i].isFinal) finalTranscript += t;
+      else interim += t;
     }
     interimTranscript = interim;
     if (inputEl) inputEl.value = (finalTranscript + " " + interimTranscript).trim();
   };
-  rec.onerror = (e) => {
-    console.warn("SpeechRecognition error:", e);
-  };
-  rec.onend = () => {
-    recognizing = false;
-    if (micBtn) micBtn.textContent = "🎤 Hold to Speak";
-  };
+  rec.onerror = (e) => console.warn("SpeechRecognition error:", e);
+  rec.onend   = () => { recognizing = false; if (micBtn) micBtn.textContent = "🎤 Hold to Speak"; };
   return rec;
 }
 
@@ -143,9 +146,7 @@ startBtn?.addEventListener("click", async () => {
           videoEl.play().catch(err => console.warn("Video autoplay blocked:", err));
         }
         if (track.kind === "audio" && track.mediaStreamTrack) {
-          // Attach remote audio and enable pause/resume
-          if (remoteAudioEl) {
-            try { remoteAudioEl.remove(); } catch {}
+          if (remoteAudioEl) { try { remoteAudioEl.remove(); } catch {}
           }
           remoteAudioEl = document.createElement("audio");
           remoteAudioEl.srcObject = new MediaStream([track.mediaStreamTrack]);
@@ -165,14 +166,11 @@ startBtn?.addEventListener("click", async () => {
     await room.connect(session.url, session.access_token);
     console.log("✅ Connected to LiveKit");
 
-    // BCM intro (always fixed; avoids KB)
-    try {
-      const r = await fetch(`${BACKEND_BASE}/assistant/intro`);
-      const j = await r.json();
-      await say(j.intro || "Hello, I’m the BCM assistant.");
-    } catch {
-      await say("Hello, I’m the BCM assistant.");
-    }
+    // 🔕 Immediately cut any auto-greeting/agent loop
+    await hardInterrupt();
+
+    // 🚫 Skip forced intro for now to avoid triggering any agent reply
+    // If you later want a welcome, call: await say("Hello, I’m the BCM assistant.");  // will be read verbatim
 
     setButtons({ starting: false, ready: true });
   } catch (err) {
@@ -187,10 +185,7 @@ endBtn?.addEventListener("click", async () => {
     setButtons({ starting: false, ready: false });
     if (lkRoom) { await lkRoom.disconnect(); lkRoom = null; }
     currentSessionId = "";
-    if (remoteAudioEl) {
-      try { remoteAudioEl.remove(); } catch {}
-      remoteAudioEl = null;
-    }
+    if (remoteAudioEl) { try { remoteAudioEl.remove(); } catch {} remoteAudioEl = null; }
     if (videoEl) {
       videoEl.srcObject = null;
       videoEl.removeAttribute("src");
@@ -220,6 +215,7 @@ speakBtn?.addEventListener("click", async () => {
     });
     const j = await r.json();
 
+    // Speak EXACTLY what backend returns (repeat mode)
     await say((j?.reply || "").trim());
     if (inputEl) inputEl.value = "";
   } catch (err) {
@@ -249,13 +245,13 @@ micBtn?.addEventListener("mouseup", async () => {
       body: JSON.stringify({ text: userText })
     });
     const j = await r.json();
+
     await say((j?.reply || "").trim());
     if (inputEl) inputEl.value = "";
   } catch (e) {
     console.warn("mic stop/send failed:", e);
   }
 });
-// Touch devices
 micBtn?.addEventListener("touchstart", async (ev) => {
   ev.preventDefault();
   try {
@@ -279,6 +275,7 @@ micBtn?.addEventListener("touchend", async (ev) => {
       body: JSON.stringify({ text: userText })
     });
     const j = await r.json();
+
     await say((j?.reply || "").trim());
     if (inputEl) inputEl.value = "";
   } catch (e) {
@@ -289,9 +286,10 @@ micBtn?.addEventListener("touchend", async (ev) => {
 // ---------- Pause/Resume ----------
 pauseBtn?.addEventListener("click", async () => {
   try {
-    await interruptSpeaking(); // try to cut TTS server-side
+    // Try to cut server-side speech and mute locally
+    await hardInterrupt();
     if (remoteAudioEl) {
-      remoteAudioEl.muted = true; // guarantee silence client-side
+      remoteAudioEl.muted = true;
       pauseBtn.disabled  = true;
       resumeBtn.disabled = false;
     }
@@ -299,7 +297,6 @@ pauseBtn?.addEventListener("click", async () => {
     console.warn("pause/interrupt failed:", e);
   }
 });
-
 resumeBtn?.addEventListener("click", () => {
   try {
     if (remoteAudioEl) {
