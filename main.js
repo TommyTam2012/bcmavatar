@@ -1,5 +1,5 @@
 // ===============================
-// main.js (LiveKit + TALK + API router)
+// main.js (LiveKit + TALK + BCM-only answers)
 // ===============================
 
 import { Room, RoomEvent } from "livekit-client";
@@ -36,60 +36,6 @@ async function say(text) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session_id: currentSessionId, text, task_type: "talk" }),
   });
-}
-
-// ---------- API fetchers (SQLite via FastAPI) ----------
-async function getFees(plan) {
-  // e.g. GI or HKDSE (matches your /fees/{program_code})
-  const r = await fetch(`${BACKEND_BASE}/fees/${encodeURIComponent(plan)}`);
-  if (!r.ok) throw new Error("fees API failed");
-  const j = await r.json();
-  // Expecting: { program, fee, currency }
-  return `${j.program} costs ${j.currency} ${j.fee}.`;
-}
-async function getSchedule(season = "summer") {
-  const r = await fetch(`${BACKEND_BASE}/schedule?season=${encodeURIComponent(season)}`);
-  if (!r.ok) throw new Error("schedule API failed");
-  const arr = await r.json(); // [{course,weeks,days}] or []
-  if (!Array.isArray(arr) || arr.length === 0) return `No schedule found for ${season}.`;
-  const s = arr[0];
-  const days = Array.isArray(s.days) ? s.days.join(", ") : s.days;
-  return `${s.course}: ${s.weeks} weeks, days: ${days}.`;
-}
-async function getCoursesSummary() {
-  // NEW: use the canonical summary endpoint to avoid route/form conflicts
-  const r = await fetch(`${BACKEND_BASE}/courses/summary`);
-  if (!r.ok) throw new Error("courses summary API failed");
-  const j = await r.json();
-  return j?.summary || "We currently have no courses listed.";
-}
-
-// ---------- Keyword router ----------
-async function handleUserQuery(raw) {
-  const q = (raw || "").trim();
-  if (!q) return;
-
-  // Fees: “fee”, “price”, “cost” + plan code GI/HKDSE
-  const feeMatch = q.match(/\b(fee|price|cost)\b.*\b(GI|HKDSE)\b/i);
-  if (feeMatch) {
-    const plan = feeMatch[2].toUpperCase();
-    try { return await getFees(plan); } catch { return "Sorry, fees are unavailable right now."; }
-  }
-
-  // Schedule: “schedule” or “time(s)” or season mention
-  const schedMatch = q.match(/\b(schedule|time|times|timetable)\b/i) || q.match(/\b(summer|winter|spring|fall)\b/i);
-  if (schedMatch) {
-    const season = (q.match(/\b(summer|winter|spring|fall)\b/i)?.[1] || "summer").toLowerCase();
-    try { return await getSchedule(season); } catch { return "Sorry, schedule is unavailable right now."; }
-  }
-
-  // Courses
-  if (/\bcourse(s)?\b/i.test(q)) {
-    try { return await getCoursesSummary(); } catch { return "Sorry, course info is unavailable right now."; }
-  }
-
-  // Default: echo user text as TTS (no KB lookup)
-  return q;
 }
 
 // ---------- UI wiring ----------
@@ -139,7 +85,7 @@ startBtn?.addEventListener("click", async () => {
     await room.connect(session.url, session.access_token);
     console.log("✅ Connected to LiveKit");
 
-    // Force BCM intro (no KB)
+    // BCM intro (always fixed)
     try {
       const r = await fetch(`${BACKEND_BASE}/assistant/intro`);
       const j = await r.json();
@@ -173,15 +119,23 @@ speakBtn?.addEventListener("click", async () => {
   try {
     const userText = (inputEl?.value || "").trim();
     if (!userText || !currentSessionId) return;
-    const reply = await handleUserQuery(userText);
-    await say(reply);
+
+    // 🚨 BCM-only backend call (replaces handleUserQuery)
+    const r = await fetch(`${BACKEND_BASE}/assistant/answer`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ text: userText })
+    });
+    const j = await r.json();
+    await say(j.reply);  // enforce BCM rules + enrollment step
+
     if (inputEl) inputEl.value = "";
   } catch (err) {
     console.error("Speak failed:", err);
   }
 });
 
-// Enter to speak
+// Enter to speak (keyboard)
 inputEl?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") speakBtn?.click();
 });
