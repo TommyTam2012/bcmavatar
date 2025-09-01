@@ -5,11 +5,53 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BCM Streaming Avatar</title>
   <style>
-    body { font-family: system-ui, Arial, sans-serif; margin: 2rem; }
-    video { width: 480px; height: 270px; background:#000; display:block; margin:1rem 0; }
-    .row { display:flex; gap:.5rem; margin:.5rem 0; }
-    input { width: 360px; padding:.5rem; }
-    button { padding:.5rem .9rem; cursor:pointer; }
+    :root {
+      --pad: .75rem;
+      --gap: .5rem;
+    }
+    body {
+      font-family: system-ui, Arial, sans-serif;
+      margin: 2rem;
+      line-height: 1.35;
+    }
+    h1 { margin: 0 0 1rem; }
+    video {
+      width: 560px;
+      height: 315px;
+      background: #000;
+      display: block;
+      margin: 1rem 0;
+    }
+    .row {
+      display: flex;
+      gap: var(--gap);
+      margin: var(--gap) 0;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    input[type="text"] {
+      width: 420px;
+      max-width: 90vw;
+      padding: var(--pad);
+      font-size: 1rem;
+    }
+    button {
+      padding: .6rem .95rem;
+      cursor: pointer;
+      border: 1px solid #ccc;
+      background: #f8f8f8;
+      border-radius: .5rem;
+      font-size: 0.95rem;
+    }
+    button:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+    .hint {
+      color: #666;
+      font-size: .9rem;
+      margin-left: .25rem;
+    }
   </style>
 </head>
 <body>
@@ -18,15 +60,20 @@
   <!-- Avatar video -->
   <video id="avatarVideo" autoplay playsinline></video>
 
-  <!-- Controls -->
+  <!-- Session controls -->
   <div class="row">
     <button id="startSession">Start</button>
     <button id="endSession" disabled>End</button>
+    <button id="pauseBtn" disabled>Pause</button>
+    <button id="resumeBtn" disabled>Resume</button>
+    <span class="hint">Pause/Resume mutes/unmutes the avatar’s audio.</span>
   </div>
+
+  <!-- Chat controls -->
   <div class="row">
-    <input id="userInput" type="text" placeholder="Type something…" />
-    <button id="speakButton">Speak</button>
-    <button id="micButton">🎤 Mic</button>
+    <input id="userInput" type="text" placeholder="Type your question…" />
+    <button id="speakButton" title="Click to send typed text">Send</button>
+    <button id="micButton" title="Hold to speak; release to send">🎤 Hold to Speak</button>
   </div>
 
   <!-- Main logic -->
