@@ -57,22 +57,13 @@ async function getSchedule(season = "summer") {
   return `${s.course}: ${s.weeks} weeks, days: ${days}.`;
 }
 async function getCoursesSummary() {
-  // Try a friendly summary endpoint if you have it; else fall back to /courses list
-  let text = "";
-  try {
-    const r1 = await fetch(`${BACKEND_BASE}/courses/summary`);
-    if (r1.ok) {
-      const j1 = await r1.json();
-      if (j1?.summary) return j1.summary;
-    }
-  } catch {}
-  // Fallback: /courses -> pick latest
-  const r2 = await fetch(`${BACKEND_BASE}/courses`);
-  if (!r2.ok) throw new Error("courses API failed");
-  const list = await r2.json();
+  const r = await fetch(`${BACKEND_BASE}/courses`);
+  if (!r.ok) throw new Error("courses API failed");
+  const list = await r.json();
   if (!Array.isArray(list) || list.length === 0) return "We currently have no courses listed.";
+  // Pick the newest (first) course
   const c = list[0];
-  text = `Latest course: ${c.name}, fee ${c.fee}.`;
+  let text = `Latest course: ${c.name}, fee ${c.fee}.`;
   if (c.start_date && c.end_date) text += ` Runs ${c.start_date} to ${c.end_date}.`;
   if (c.time)  text += ` Time: ${c.time}.`;
   if (c.venue) text += ` Venue: ${c.venue}.`;
