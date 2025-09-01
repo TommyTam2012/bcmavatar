@@ -117,23 +117,30 @@ endBtn?.addEventListener("click", async () => {
 
 speakBtn?.addEventListener("click", async () => {
   try {
-    const userText = (inputEl?.value || "").trim();
-    if (!userText || !currentSessionId) return;
+    let userText = (inputEl?.value || "").trim();
+    if (!currentSessionId) return;
+    if (!userText) {
+      // never send empty/space-only tasks to HeyGen (prevents agent-like behavior)
+      return;
+    }
 
-    // 🚨 BCM-only backend call (replaces handleUserQuery)
+    // BCM-only backend call
     const r = await fetch(`${BACKEND_BASE}/assistant/answer`, {
       method: "POST",
       headers: {"Content-Type":"application/json"},
       body: JSON.stringify({ text: userText })
     });
     const j = await r.json();
-    await say(j.reply);  // enforce BCM rules + enrollment step
+
+    // Force talk-only task (no agent), so avatar just speaks our reply
+    await say((j?.reply || "").trim());
 
     if (inputEl) inputEl.value = "";
   } catch (err) {
     console.error("Speak failed:", err);
   }
 });
+
 
 // Enter to speak (keyboard)
 inputEl?.addEventListener("keydown", (e) => {
