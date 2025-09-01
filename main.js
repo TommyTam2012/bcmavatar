@@ -57,17 +57,11 @@ async function getSchedule(season = "summer") {
   return `${s.course}: ${s.weeks} weeks, days: ${days}.`;
 }
 async function getCoursesSummary() {
-  const r = await fetch(`${BACKEND_BASE}/courses`);
-  if (!r.ok) throw new Error("courses API failed");
-  const list = await r.json();
-  if (!Array.isArray(list) || list.length === 0) return "We currently have no courses listed.";
-  // Pick the newest (first) course
-  const c = list[0];
-  let text = `Latest course: ${c.name}, fee ${c.fee}.`;
-  if (c.start_date && c.end_date) text += ` Runs ${c.start_date} to ${c.end_date}.`;
-  if (c.time)  text += ` Time: ${c.time}.`;
-  if (c.venue) text += ` Venue: ${c.venue}.`;
-  return text;
+  // NEW: use the canonical summary endpoint to avoid route/form conflicts
+  const r = await fetch(`${BACKEND_BASE}/courses/summary`);
+  if (!r.ok) throw new Error("courses summary API failed");
+  const j = await r.json();
+  return j?.summary || "We currently have no courses listed.";
 }
 
 // ---------- Keyword router ----------
@@ -145,8 +139,14 @@ startBtn?.addEventListener("click", async () => {
     await room.connect(session.url, session.access_token);
     console.log("✅ Connected to LiveKit");
 
-    // (Optional) Force intro line to bypass KB
-    await say("Hello, I am your BCM assistant. Ask me about GI fees, summer schedule, or our latest courses.");
+    // Force BCM intro (no KB)
+    try {
+      const r = await fetch(`${BACKEND_BASE}/assistant/intro`);
+      const j = await r.json();
+      await say(j.intro || "Hello, I’m the BCM assistant.");
+    } catch {
+      await say("Hello, I’m the BCM assistant.");
+    }
 
     setButtons({ starting: false, ready: true });
   } catch (err) {
