@@ -169,8 +169,8 @@ startBtn?.addEventListener("click", async () => {
     // 🔕 Immediately cut any auto-greeting/agent loop
     await hardInterrupt();
 
-    // 🚫 Skip forced intro for now to avoid triggering any agent reply
-    // If you later want a welcome, call: await say("Hello, I’m the BCM assistant.");  // will be read verbatim
+    // ✅ Custom welcome message
+    await say("Hi, I am your school assistant for testing and demonstration purpose, how may I help you?");
 
     setButtons({ starting: false, ready: true });
   } catch (err) {
